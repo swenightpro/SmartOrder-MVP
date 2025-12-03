@@ -1,6 +1,9 @@
 # SmartOrder: Repository Codice
+### Anno Accademico 2025/2026
 
-## Informazioni Generali
+---
+
+## 1. Informazioni Generali
 
 - **Progetto:** SmartOrder - Analisi Multimodale per la Creazione Automatica di Ordini
 - **Corso:** Ingegneria del Software
@@ -12,7 +15,7 @@
 - **Organizzazione GitHub:** [https://github.com/swenightpro](https://github.com/swenightpro)
 
 
-## Descrizione del Progetto
+## 2. Descrizione del Progetto
 
 SmartOrder è una piattaforma intelligente progettata per automatizzare la ricezione e l'elaborazione di ordini di acquisto provenienti da canali molteplici. L'obiettivo del progetto è trasformare dati non strutturati in ordini cliente completi e normalizzati, pronti per l'inserimento in database aziendali e sistemi ERP.
 
@@ -21,7 +24,7 @@ Il sistema analizza input multimodali provenienti da clienti – attualmente foc
 Per ulteriori dettagli sulla visione del progetto, l'architettura proposta e i requisiti completi, si rimanda alla [documentazione del progetto](https://github.com/swenightpro/Documentazione).
 
 
-## Architettura del Sistema
+## 3. Architettura del Sistema
 
 Il sistema è progettato come una pipeline modulare articolata nei seguenti layer:
 
@@ -37,7 +40,7 @@ Il sistema è progettato come una pipeline modulare articolata nei seguenti laye
 Per una visualizzazione completa dell'architettura, consultare la documentazione tecnica del progetto.
 
 
-## Struttura Organizzativa
+## 4. Struttura Organizzativa
 
 Il repository è parte dell'organizzazione GitHub NightPRO, che mantiene una netta separazione tra:
 
@@ -45,7 +48,7 @@ Il repository è parte dell'organizzazione GitHub NightPRO, che mantiene una net
 - 💻 **Repository Codice:** [https://github.com/swenightpro/SmartOrder](https://github.com/swenightpro/SmartOrder)
 
 
-## Componenti del Gruppo
+## 5. Componenti del Gruppo
 
 Il gruppo di lavoro NightPRO è composto dai seguenti membri:
 
@@ -60,7 +63,7 @@ Il gruppo di lavoro NightPRO è composto dai seguenti membri:
 | Ponso           | Giovanni        | 2000558   |
 
 
-## Contatti e Supporto
+## 6. Contatti e Supporto
 
 Per informazioni, chiarimenti o supporto tecnico relativi al progetto:
 
@@ -71,13 +74,13 @@ Per informazioni, chiarimenti o supporto tecnico relativi al progetto:
 La documentazione completa del progetto è disponibile presso il [repository Documentazione](https://github.com/swenightpro/Documentazione).
 
 
-## Note Importanti
+## 7. Note Importanti
 
 - Questo README verrà aggiornato regolarmente durante le fasi di sviluppo
 - Per questioni di natura organizzativa o riguardanti il progetto, fare riferimento ai contatti sopra indicati
 
 
-## Licenza
+## 8. Licenza
 
 Informazioni sulla licenza del progetto saranno comunicate in una fase successiva dello sviluppo.
 
