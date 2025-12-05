@@ -42,10 +42,10 @@ Per una visualizzazione completa dell'architettura, consultare la documentazione
 
 ## 4. Struttura Organizzativa
 
-Il repository è parte dell'organizzazione GitHub NightPRO, che mantiene una netta separazione tra:
-
-- 📄 **Repository Documentazione:** [https://github.com/swenightpro/Documentazione](https://github.com/swenightpro/Documentazione)
-- 💻 **Repository Codice:** [https://github.com/swenightpro/SmartOrder](https://github.com/swenightpro/SmartOrder)
+Il progetto è articolato su tre repository distinti, ospitati all'interno dell'organizzazione del gruppo:
+- [Documentazione](https://github.com/swenightpro/Documentazione)
+- [SmartOrder-Poc](https://github.com/swenightpro/SmartOrder-PoC)
+- [SmartOrder-MVP](https://github.com/swenightpro/SmartOrder-PoC)
 
 
 ## 5. Componenti del Gruppo
@@ -71,19 +71,9 @@ Per informazioni, chiarimenti o supporto tecnico relativi al progetto:
 - **Contatti Organizzativi:** Anna Tieppo (tieppo.a@ergon.it)
 - **Email del Gruppo:** swe.nightpro@gmail.com
 
-La documentazione completa del progetto è disponibile presso il [repository Documentazione](https://github.com/swenightpro/Documentazione).
-
-
-## 7. Note Importanti
-
-- Questo README verrà aggiornato regolarmente durante le fasi di sviluppo
-- Per questioni di natura organizzativa o riguardanti il progetto, fare riferimento ai contatti sopra indicati
-
-
-## 8. Licenza
+## 7. Licenza
 
 Informazioni sulla licenza del progetto saranno comunicate in una fase successiva dello sviluppo.
 
 ---
 
-**Ultimo aggiornamento:** Dicembre 2025
