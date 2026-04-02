@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand palette – navy/indigo from mockups */
+  --so-navy: 234 62% 26%;
+  --so-indigo: 234 60% 36%;
+  --so-accent: 52 95% 62%;
+  --so-bg: 230 25% 97%;
+  --so-card: 0 0% 100%;
+  --so-text: 230 25% 12%;
+  --so-muted: 230 10% 52%;
+  --so-border: 230 15% 90%;
+  --so-success: 155 72% 40%;
+  --so-danger: 0 72% 55%;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: hsl(var(--so-bg));
+  color: hsl(var(--so-text));
+  -webkit-font-smoothing: antialiased;
+}
+
+/* scrollbar styling */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--so-border));
+  border-radius: 99px;
+}
+
+/* smooth entrance animations */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out both;
+}
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out both;
+}
+.animate-slide-down {
+  animation: slideDown 0.25s ease-out both;
+}
