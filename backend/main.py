@@ -140,10 +140,12 @@ app.include_router(ticket_controller.router)
 app.include_router(sse_controller.router)
 
 if __name__ == "__main__":
+    import os
     import uvicorn
+    port = int(os.environ.get("PORT", settings.api_port))
     uvicorn.run(
         "main:app",
         host=settings.api_host,
-        port=settings.api_port,
-        reload=True,
+        port=port,
+        reload=os.environ.get("RAILWAY_ENVIRONMENT") is None,
     )

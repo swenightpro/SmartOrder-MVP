@@ -9,14 +9,15 @@ def get_pool() -> pool.SimpleConnectionPool:
     global _pool
     if _pool is None or _pool.closed:
         s = get_settings()
+        db = s.db_config
         _pool = pool.SimpleConnectionPool(
             minconn=2,
             maxconn=10,
-            host=s.db_host,
-            port=s.db_port,
-            user=s.db_user,
-            password=s.db_password,
-            database=s.db_name,
+            host=db["host"],
+            port=db["port"],
+            user=db["user"],
+            password=db["password"],
+            database=db["database"],
         )
     return _pool
 

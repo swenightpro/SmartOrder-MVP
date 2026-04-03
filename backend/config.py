@@ -1,13 +1,15 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
+
 
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
 
 class Settings(BaseSettings):
     """Configurazione dell'applicazione."""
 
-    # --- Database (PostgreSQL) ---
+    database_url: str = ""
     db_host: str = "localhost"
     db_port: int = 5432
     db_user: str = "postgres"
@@ -40,10 +42,11 @@ class Settings(BaseSettings):
     # --- Server ---
     api_port: int = 8000
     api_host: str = "0.0.0.0"
+    cookie_secure: bool = False
 
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"  # comma-separated in prod
-    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://.*\.up\.railway\.app$"
 
     # --- AI models ---
     ai_model: str = "gpt-4o"
@@ -59,6 +62,26 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def db_config(self) -> dict:
+        """Ritorna i parametri di connessione DB, parsando DATABASE_URL se presente."""
+        if self.database_url:
+            parsed = urlparse(self.database_url)
+            return {
+                "host": parsed.hostname or self.db_host,
+                "port": parsed.port or self.db_port,
+                "user": parsed.username or self.db_user,
+                "password": parsed.password or self.db_password,
+                "database": parsed.path.lstrip("/") or self.db_name,
+            }
+        return {
+            "host": self.db_host,
+            "port": self.db_port,
+            "user": self.db_user,
+            "password": self.db_password,
+            "database": self.db_name,
+        }
 
 @lru_cache()
 def get_settings() -> Settings:
