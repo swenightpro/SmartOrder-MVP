@@ -1,11 +1,3 @@
-// ============================================================
-// components/ui/SectionHeader.tsx — Intestazione sezione con conteggio
-//
-// Componente atomico: label UPPERCASE + linea divisoria + badge
-// numerico opzionale. Usato in CartPanel e OrderDetailModal
-// per separare visivamente le sezioni.
-// ============================================================
-
 interface SectionHeaderProps {
     label: string;
     count?: number;

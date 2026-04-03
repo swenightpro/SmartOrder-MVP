@@ -1,19 +1,9 @@
-// ============================================================
-// contexts/SessionContext.tsx — Provider globale per sessione chat e messaggi
-//
-// Design Pattern: Dependency Injection (React Context)
-// Centralizza la gestione di: sessione corrente, messaggi chat,
-// e la logica di nuova sessione (modale di conferma incluso).
-// I componenti consumano il contesto tramite l'hook useSession().
-//
-// Dipendenze: sessionService, cartService (Facade pattern)
-// ============================================================
-
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode, type Dispatch, type SetStateAction } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react';
 import type { Message } from '@/types';
 import { sessionService, cartService } from '@/services';
+import { useSSE } from '@/hooks';
 
 interface SessionContextValue {
     sessionId: number | null;
@@ -44,6 +34,21 @@ export function SessionProvider({ children, clientName, onSessionReset }: Sessio
     const [sessionId, setSessionId] = useState<number | null>(null);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
     const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+
+    // SSE: real-time messages for this session
+    useSSE(sessionId ? `/sse/${sessionId}` : null, {
+        onEvent: (event) => {
+            if (event.type === 'message') {
+                const msg = event.data as { id: number; sender: string; content: string };
+                // Only add if not already present (by DB id)
+                setChatMessages(prev => {
+                    if (prev.some(m => m.id === String(msg.id))) return prev;
+                    const role: 'user' | 'assistant' = msg.sender === 'user' ? 'user' : 'assistant';
+                    return [...prev, { id: String(msg.id), role, content: msg.content }];
+                });
+            }
+        },
+    });
 
     const initSession = useCallback(async () => {
         const existing = await sessionService.getActive();

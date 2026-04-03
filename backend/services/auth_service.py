@@ -1,10 +1,3 @@
-# ===========================================================================
-# services/auth_service.py — Application Service per autenticazione
-#
-# Gestisce hashing password (scrypt), generazione/validazione JWT,
-# e i casi d'uso di login, logout, profilo e cambio password.
-# ===========================================================================
-
 import hashlib
 import os
 import time
@@ -13,7 +6,6 @@ from typing import Optional
 
 from config import get_settings
 from ports.i_user_repository import IUserRepository
-
 
 class AuthService:
     """Servizio applicativo di autenticazione."""

@@ -1,12 +1,3 @@
-// ============================================================
-// components/orders/OrderDetailModal.tsx — Modale dettaglio ordine
-//
-// Visualizza il dettaglio completo di un ordine: articoli ordinati
-// e storico conversazione chat. Supporta il click su un articolo
-// per scrollare al messaggio chat corrispondente (highlight).
-// Delega il caricamento dati al Facade orderService.getDetail().
-// ============================================================
-
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import type { OrderDetail } from '@/types';
@@ -40,16 +31,25 @@ export default function OrderDetailModal({ orderId, codCli, onClose }: OrderDeta
         return () => { mounted = false; };
     }, [orderId, codCli]);
 
-
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
     }, [onClose]);
 
-    const formattedDate = detail
-        ? new Date(detail.data_ord).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })
-        : '';
+    const formattedDate = (() => {
+        if (!detail) return '';
+        try {
+            const d = new Date(detail.data_ord);
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const months = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+            const month = months[d.getUTCMonth()];
+            const year = d.getUTCFullYear();
+            return `${day} ${month} ${year}`;
+        } catch {
+            return detail.data_ord;
+        }
+    })();
 
     const scrollToMessage = (messageId: number) => {
         if (!chatRef.current) return;

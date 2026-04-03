@@ -1,13 +1,5 @@
-# ===========================================================================
-# ports/i_user_repository.py — Outbound Port per accesso dati utente
-#
-# Definisce il contratto che il layer applicativo usa per interagire con
-# i dati utente e gli assortimenti, senza conoscere il database sottostante.
-# ===========================================================================
-
 from abc import ABC, abstractmethod
 from typing import Optional
-
 
 class IUserRepository(ABC):
     """Contratto di accesso ai dati utente e assortimento."""

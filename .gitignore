@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+backend/venv/
+
+# Next.js
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environment
+.env
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Debug/temp
+cookie.txt
+backend/cookie.txt
+*.log
+
+# OMC
+backend/.omc/
+
+# Dev notes
+progress.txt
+PLAN.md
+CLAUDE.md

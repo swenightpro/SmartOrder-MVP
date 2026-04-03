@@ -1,7 +1,3 @@
-# ===========================================================================
-# services/feedback_service.py — Application Service per feedback
-# ===========================================================================
-
 from typing import Optional
 
 class FeedbackService:

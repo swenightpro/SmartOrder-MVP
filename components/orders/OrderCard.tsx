@@ -1,11 +1,3 @@
-// ============================================================
-// components/orders/OrderCard.tsx — Card singolo ordine nello storico
-//
-// Card compatta che mostra: ID ordine, data, numero articoli,
-// anteprima primi prodotti e badge chat. Al click apre il
-// modale OrderDetailModal per la visualizzazione completa.
-// ============================================================
-
 import type { OrderSummary } from '@/types';
 
 interface OrderCardProps {
@@ -15,9 +7,18 @@ interface OrderCardProps {
 }
 
 export default function OrderCard({ order, index, onClick }: OrderCardProps) {
-    const formattedDate = new Date(order.data_ord).toLocaleDateString('it-IT', {
-        day: 'numeric', month: 'long', year: 'numeric',
-    });
+    // Formatta la data in modo stabile (UTC) per evitare mismatch SSR/client
+    const formattedDate = (() => {
+        try {
+            const d = new Date(order.data_ord);
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const year = d.getUTCFullYear();
+            return `${day}/${month}/${year}`;
+        } catch {
+            return order.data_ord;
+        }
+    })();
 
     const hasMessages = (order.message_count || 0) > 0;
     const preview = order.preview_items || [];

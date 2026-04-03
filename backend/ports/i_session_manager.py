@@ -1,12 +1,5 @@
-# ===========================================================================
-# ports/i_session_manager.py — Outbound Port per sessioni e messaggi chat
-#
-# Astrae la persistenza di sessioni conversazionali, messaggi e carrelli.
-# ===========================================================================
-
 from abc import ABC, abstractmethod
 from typing import Optional
-
 
 class ISessionManager(ABC):
     """Contratto di accesso a sessioni, messaggi e carrelli."""
@@ -36,6 +29,11 @@ class ISessionManager(ABC):
 
     # --- Carrello ---
     @abstractmethod
+    def get_cart_by_session(self, session_id: int) -> list[dict]:
+        """Recupera gli articoli nel carrello di una sessione specifica."""
+        ...
+
+    @abstractmethod
     def get_cart(self, user_id: int) -> list[dict]:
         """Recupera gli articoli nel carrello dell'utente."""
         ...
@@ -49,8 +47,21 @@ class ISessionManager(ABC):
         ...
 
     @abstractmethod
+    def add_to_cart_by_session(self, session_id: int, cod_art: str, qta: int,
+                               source: str = "customer",
+                               ai_confidence: Optional[float] = None,
+                               related_message_id: Optional[int] = None) -> dict:
+        """Aggiunge un articolo al carrello della sessione specificata."""
+        ...
+
+    @abstractmethod
     def remove_from_cart(self, cart_item_id: int, user_id: int) -> bool:
         """Rimuove un articolo dal carrello. Ritorna True se rimosso."""
+        ...
+
+    @abstractmethod
+    def remove_from_cart_by_session(self, cart_item_id: int, session_id: int) -> bool:
+        """Rimuove un articolo dal carrello della sessione specificata."""
         ...
 
     @abstractmethod
@@ -60,6 +71,17 @@ class ISessionManager(ABC):
         ...
 
     @abstractmethod
+    def update_cart_quantity_by_session(self, cart_item_id: int, session_id: int,
+                                        qta: int, source: str = "customer") -> bool:
+        """Aggiorna la quantità di un articolo nel carrello della sessione specificata."""
+        ...
+
+    @abstractmethod
     def clear_cart(self, user_id: int) -> None:
         """Svuota il carrello dell'utente."""
+        ...
+
+    @abstractmethod
+    def clear_cart_by_session(self, session_id: int) -> None:
+        """Svuota il carrello della sessione specificata."""
         ...

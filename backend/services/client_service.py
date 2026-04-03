@@ -1,7 +1,3 @@
-# ===========================================================================
-# services/client_service.py — Application Service per gestione clienti
-# ===========================================================================
-
 class ClientService:
     def __init__(self, client_repo):
         self._repo = client_repo

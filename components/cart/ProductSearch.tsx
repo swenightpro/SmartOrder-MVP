@@ -1,11 +1,3 @@
-// ============================================================
-// components/cart/ProductSearch.tsx — Barra ricerca prodotti con autocomplete
-//
-// Input di ricerca con dropdown suggerimenti. Usa l'hook
-// useProductSearch (pattern Observer) per gestire debounce,
-// chiamata API e stato dei risultati in modo reattivo.
-// ============================================================
-
 "use client";
 import type { Product } from '@/types';
 import { useProductSearch } from '@/hooks';
@@ -44,9 +36,9 @@ export default function ProductSearch({ onSelect, compact = false }: ProductSear
             />
             {suggestions.length > 0 && (
                 <div className={`absolute w-full bg-white border border-gray-100 shadow-2xl z-[110] overflow-y-auto divide-y divide-gray-50 custom-scrollbar animate-slide-down ${compact ? 'mt-1.5 rounded-xl max-h-[200px]' : 'mt-2 rounded-2xl max-h-[220px]'}`}>
-                    {suggestions.map((p) => (
+                    {suggestions.map((p, idx) => (
                         <div
-                            key={p.cod_art}
+                            key={`${p.cod_art}-${idx}`}
                             onClick={() => handleSelect(p)}
                             className={`hover:bg-[hsl(234,60%,97%)] cursor-pointer group transition-colors ${compact ? 'px-3.5 py-2.5' : 'p-3'}`}
                         >

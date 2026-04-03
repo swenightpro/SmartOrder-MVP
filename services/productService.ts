@@ -1,10 +1,3 @@
-// ============================================================
-// services/productService.ts — Facade per ricerca catalogo prodotti
-//
-// Espone search() per cercare prodotti per codice o descrizione.
-// Consumato dall'hook useProductSearch (pattern Observer).
-// ============================================================
-
 import type { Product } from '@/types';
 import { apiFetch } from '@/lib/apiClient';
 

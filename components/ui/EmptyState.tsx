@@ -1,11 +1,3 @@
-// ============================================================
-// components/ui/EmptyState.tsx — Placeholder per liste vuote
-//
-// Componente atomico che mostra un'icona e un messaggio quando
-// una lista è vuota (carrello, storico, chat). Tre varianti
-// icona: cart, list, chat.
-// ============================================================
-
 interface EmptyStateProps {
     icon?: 'cart' | 'list' | 'chat';
     message: string;

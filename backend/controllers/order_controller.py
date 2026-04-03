@@ -1,9 +1,3 @@
-# ===========================================================================
-# controllers/order_controller.py — Controller ordini (Layer 1)
-#
-# Endpoint: POST /orders/create, GET /orders/list, GET /orders/detail
-# ===========================================================================
-
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from domain.schemas import CreateOrderRequest
@@ -12,11 +6,9 @@ from services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-
 def _get_order_service() -> OrderService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
-
 
 def _resolve_target_cod_cli(user: dict, requested_cod_cli: Optional[int]) -> int:
     role = str(user.get("role") or "customer")
@@ -34,7 +26,6 @@ def _resolve_target_cod_cli(user: dict, requested_cod_cli: Optional[int]) -> int
         raise HTTPException(status_code=403, detail="cod_cli non autorizzato")
 
     return user_cod_cli
-
 
 @router.post("/create")
 def create_order(body: CreateOrderRequest,
@@ -57,16 +48,38 @@ def create_order(body: CreateOrderRequest,
 
     return {"order_id": order_id}
 
-
 @router.get("/list")
 def list_orders(page: int = 0,
                 cod_cli: Optional[int] = None,
+                search: str = "",
+                sort_by: str = "data_ord",
+                sort_dir: str = "desc",
+                date_from: Optional[str] = None,
+                date_to: Optional[str] = None,
                 user: dict = Depends(_get_current_user),
                 order_service: OrderService = Depends(_get_order_service)):
     target_cod_cli = _resolve_target_cod_cli(user, cod_cli)
-    orders = order_service.get_orders_by_client(target_cod_cli, page)
+    orders = order_service.get_orders_by_client(
+        target_cod_cli, page, 15, search, sort_by, sort_dir, date_from, date_to)
     return orders
 
+@router.get("/all")
+def list_all_orders(page: int = 0,
+                   search: str = "",
+                   sort_by: str = "data_ord",
+                   sort_dir: str = "desc",
+                   date_from: Optional[str] = None,
+                   date_to: Optional[str] = None,
+                   search_cod_cli: str = "",
+                   search_rag_soc: str = "",
+                   user: dict = Depends(_get_current_user),
+                   order_service: OrderService = Depends(_get_order_service)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Solo operatori")
+    orders = order_service.get_all_orders(
+        page, 15, search, sort_by, sort_dir, date_from, date_to,
+        search_cod_cli, search_rag_soc)
+    return orders
 
 @router.get("/detail")
 def order_detail(id: int,

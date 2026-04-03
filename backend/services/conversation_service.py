@@ -1,11 +1,3 @@
-# ===========================================================================
-# services/conversation_service.py — Application Service per conversazione AI
-#
-# Rifattorizzazione di routers/chat.py + services/ai_service.py.
-# Mantiene IDENTICA la logica di business (intent classification,
-# product search, business decision, output coherence).
-# ===========================================================================
-
 import re
 import json
 import logging
@@ -17,14 +9,10 @@ from pydantic import BaseModel, Field
 from config import get_settings
 from ports.i_ai_client import IAIClient
 from ports.i_session_manager import ISessionManager
+from services.sse_broadcaster import OPERATOR_CHANNEL
 from adapters.postgres_adapter import PostgresAdapter
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Pydantic models per structured output OpenAI (migrati da models/schemas.py)
-# ---------------------------------------------------------------------------
 
 class ProductSearchParams(BaseModel):
     intent: str = "SPECIFIC"
@@ -32,18 +20,15 @@ class ProductSearchParams(BaseModel):
     expanded_categories: list[str] = Field(default_factory=list)
     limit: int = 10
 
-
 class ProductItem(BaseModel):
     cod_art: str
     quantity: float = 1
     confidence: float = 0.9
 
-
 class CartEdit(BaseModel):
     cart_item_id: int
     action: str
     new_quantity: Optional[float] = None
-
 
 class BusinessDecisionResponse(BaseModel):
     message: str = ""
@@ -53,13 +38,13 @@ class BusinessDecisionResponse(BaseModel):
     cart_edits: list[CartEdit] = Field(default_factory=list)
     edit_confirmed: bool = False
 
-
 class ConversationService:
     """Servizio applicativo per il flusso conversazionale."""
 
-    def __init__(self, db: PostgresAdapter, ai_client: IAIClient):
+    def __init__(self, db: PostgresAdapter, ai_client: IAIClient, broadcaster=None):
         self._db = db
         self._ai_client = ai_client
+        self._broadcaster = broadcaster
         s = get_settings()
         self._openai = OpenAI(api_key=s.openai_api_key)
         self._model_fast = s.ai_model_mini
@@ -217,6 +202,30 @@ class ConversationService:
             ai_message_id = self._db.save_message(
                 session_id, "ai", decision.message or "", ai_metadata
             )
+
+            # --- Emit SSE events ---
+            if self._broadcaster:
+                await self._broadcaster.emit(session_id, "message", {
+                    "id": user_message_id,
+                    "sender": "user",
+                    "content": message,
+                })
+                # Also notify operator dashboard in real-time
+                await self._broadcaster.emit(OPERATOR_CHANNEL, "message", {
+                    "id": user_message_id,
+                    "sender": "user",
+                    "content": message,
+                    "session_id": session_id,
+                })
+                if ai_message_id:
+                    await self._broadcaster.emit(session_id, "message", {
+                        "id": ai_message_id,
+                        "sender": "ai",
+                        "content": decision.message or "",
+                    })
+                # Emit cart update if AI added/edited items
+                if filtered_items or decision.cart_edits:
+                    await self._broadcaster.emit(session_id, "cart_update", {})
 
         # --- Build response ---
         product_items_out = [

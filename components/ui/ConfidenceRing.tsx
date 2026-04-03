@@ -1,11 +1,3 @@
-// ============================================================
-// components/ui/ConfidenceRing.tsx — Indicatore ad anello AI confidence
-//
-// Renderizza un anello SVG circolare che mostra il grado di
-// confidence (0.0–1.0) dell'AI nella scelta del prodotto.
-// Usa colori semantici: blu per alta, ambra per media, rosso per bassa.
-// ============================================================
-
 "use client";
 
 interface ConfidenceRingProps {

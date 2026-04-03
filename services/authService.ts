@@ -1,16 +1,8 @@
-// ============================================================
-// services/authService.ts — Facade per autenticazione utente
-//
-// Espone login, getProfile, changePassword e logout.
-// Incapsula le chiamate al backend FastAPI /auth/*.
-// Consumato da LoginForm, UserProfilePanel e page.tsx.
-// ============================================================
-
 import type { UserProfile } from '@/types';
 import { apiFetch, getApiErrorMessage } from '@/lib/apiClient';
 
 export const authService = {
-    login: async (email: string, password: string): Promise<{ cod_cli: number; rag_soc: string }> => {
+    login: async (email: string, password: string): Promise<{ cod_cli: number; rag_soc: string; role: string }> => {
         const res = await apiFetch('/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -19,8 +11,9 @@ export const authService = {
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || data?.detail || data?.message || 'Login fallito');
         const user = data?.user;
-        if (!user?.cod_cli || !user?.rag_soc) throw new Error('Risposta login non valida');
-        return { cod_cli: Number(user.cod_cli), rag_soc: user.rag_soc };
+        if (!user) throw new Error('Risposta login non valida');
+        const cod_cli = user.cod_cli != null ? Number(user.cod_cli) : 0;
+        return { cod_cli, rag_soc: user.rag_soc || '', role: user.role || 'customer' };
     },
 
     getProfile: async (): Promise<UserProfile | null> => {

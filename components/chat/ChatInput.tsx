@@ -1,11 +1,3 @@
-// ============================================================
-// components/chat/ChatInput.tsx — Barra di input messaggio e registrazione vocale
-//
-// Campo testo con pulsante invio e toggle registrazione audio.
-// Gestisce il MediaRecorder per la cattura vocale e la
-// visualizzazione dell'onda audio durante la registrazione.
-// ============================================================
-
 "use client";
 import { useState, useRef } from 'react';
 

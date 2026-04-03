@@ -1,12 +1,5 @@
-# ===========================================================================
-# ports/i_order_repository.py — Outbound Port per ordini
-#
-# Astrae la persistenza e il recupero degli ordini.
-# ===========================================================================
-
 from abc import ABC, abstractmethod
 from typing import Optional
-
 
 class IOrderRepository(ABC):
     """Contratto di accesso ai dati ordini."""
@@ -20,8 +13,25 @@ class IOrderRepository(ABC):
 
     @abstractmethod
     def get_orders_by_client(self, cod_cli: int, page: int = 0,
-                             limit: int = 15) -> list[dict]:
-        """Recupera ordini del cliente con paginazione."""
+                             limit: int = 15,
+                             search: str = "",
+                             sort_by: str = "data_ord",
+                             sort_dir: str = "desc",
+                             date_from: Optional[str] = None,
+                             date_to: Optional[str] = None) -> list[dict]:
+        """Recupera ordini del cliente con paginazione e filtri."""
+        ...
+
+    @abstractmethod
+    def get_all_orders(self, page: int = 0, limit: int = 15,
+                       search: str = "",
+                       sort_by: str = "data_ord",
+                       sort_dir: str = "desc",
+                       date_from: Optional[str] = None,
+                       date_to: Optional[str] = None,
+                       search_cod_cli: str = "",
+                       search_rag_soc: str = "") -> list[dict]:
+        """Recupera TUTTI gli ordini (admin) con filtri e ordinamento."""
         ...
 
     @abstractmethod

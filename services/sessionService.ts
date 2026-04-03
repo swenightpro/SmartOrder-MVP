@@ -1,12 +1,3 @@
-// ============================================================
-// services/sessionService.ts — Facade per sessioni chat
-//
-// Espone getActive (recupera sessione aperta) e create (nuova).
-// Ogni sessione raggruppa messaggi chat e articoli correlati.
-// Consumato da SessionContext per gestire il ciclo di vita
-// della sessione corrente.
-// ============================================================
-
 import { apiFetch } from '@/lib/apiClient';
 
 export const sessionService = {

@@ -1,10 +1,3 @@
-# ===========================================================================
-# adapters/postgres_adapter.py — Infrastructure Adapter per PostgreSQL
-#
-# Implementa IUserRepository, ISessionManager e IOrderRepository.
-# Tutte le query SQL del sistema sono centralizzate qui.
-# ===========================================================================
-
 from typing import Optional
 import json
 from psycopg2 import errors as pg_errors
@@ -12,12 +5,9 @@ from psycopg2 import errors as pg_errors
 from ports.i_user_repository import IUserRepository
 from ports.i_session_manager import ISessionManager
 from ports.i_order_repository import IOrderRepository
+from ports.i_ticket_repository import ITicketRepository
 from adapters.database import execute_query, execute_query_one
 
-
-# ---------------------------------------------------------------------------
-# Status di prodotto bloccanti (l'articolo non può essere ordinato)
-# ---------------------------------------------------------------------------
 BLOCKING_STATUSES = [
     "ARTICOLO SOSPESO",
     "SU AUTORIZZAZIONE",
@@ -25,8 +15,7 @@ BLOCKING_STATUSES = [
     "NON DISPONIBILE",
 ]
 
-
-class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
+class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicketRepository):
     """Implementazione concreta di tutte le porte repository via PostgreSQL."""
 
     def _resync_id_sequence(self, table_name: str) -> None:
@@ -182,11 +171,8 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
     # ISessionManager — Carrello
     # =======================================================================
 
-    def get_cart(self, user_id: int) -> list[dict]:
-        session = self.get_active_session(user_id)
-        if not session:
-            return []
-        
+    def get_cart_by_session(self, session_id: int) -> list[dict]:
+        """Recupera gli articoli nel carrello di una sessione specifica."""
         return execute_query(
             """SELECT ci.id, ci.cod_art, ci.qta, ci.source, ci.last_updated_by,
                       ci.ai_confidence, ci.related_message_id, ci.updated_at,
@@ -196,8 +182,22 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
                LEFT JOIN anaart a ON ci.cod_art = a.cod_art
                WHERE ci.session_id = %s
                ORDER BY ci.updated_at ASC""",
-            (session["id"],),
+            (session_id,),
         )
+
+    def get_cart(self, user_id: int) -> list[dict]:
+        session = self.get_active_session(user_id)
+        if not session:
+            return []
+        return self.get_cart_by_session(session["id"])
+
+    def _validate_product_exists(self, cod_art: str) -> None:
+        product_exists = execute_query_one(
+            "SELECT cod_art FROM anaart WHERE cod_art = %s LIMIT 1",
+            (cod_art,),
+        )
+        if not product_exists:
+            raise ValueError(f"Articolo non valido: {cod_art}")
 
     def add_to_cart(self, user_id: int, cod_art: str, qta: int,
                     source: str = "customer",
@@ -208,15 +208,20 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
             # Crea sessione se non esiste
             session = self.create_session(user_id)
 
-        # Evita errori SQL opachi in caso di cod_art non valido.
-        product_exists = execute_query_one(
-            "SELECT cod_art FROM anaart WHERE cod_art = %s LIMIT 1",
-            (cod_art,),
+        return self.add_to_cart_by_session(
+            session_id=session["id"],
+            cod_art=cod_art,
+            qta=qta,
+            source=source,
+            ai_confidence=ai_confidence,
+            related_message_id=related_message_id,
         )
-        if not product_exists:
-            raise ValueError(f"Articolo non valido: {cod_art}")
-            
-        session_id = session["id"]
+
+    def add_to_cart_by_session(self, session_id: int, cod_art: str, qta: int,
+                               source: str = "customer",
+                               ai_confidence: Optional[float] = None,
+                               related_message_id: Optional[int] = None) -> dict:
+        self._validate_product_exists(cod_art)
 
         # Upsert: se l'articolo esiste già, somma la quantità
         existing = execute_query_one(
@@ -246,30 +251,43 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
 
     def remove_from_cart(self, cart_item_id: int, user_id: int) -> bool:
         session = self.get_active_session(user_id)
-        if not session: return False
+        if not session:
+            return False
+        return self.remove_from_cart_by_session(cart_item_id, session["id"])
+
+    def remove_from_cart_by_session(self, cart_item_id: int, session_id: int) -> bool:
         result = execute_query(
             "DELETE FROM cart_items WHERE id = %s AND session_id = %s RETURNING id",
-            (cart_item_id, session["id"]),
+            (cart_item_id, session_id),
         )
         return len(result) > 0
 
     def update_cart_quantity(self, cart_item_id: int, user_id: int,
                             qta: int, source: str = "customer") -> bool:
         session = self.get_active_session(user_id)
-        if not session: return False
+        if not session:
+            return False
+        return self.update_cart_quantity_by_session(cart_item_id, session["id"], qta, source)
+
+    def update_cart_quantity_by_session(self, cart_item_id: int, session_id: int,
+                                        qta: int, source: str = "customer") -> bool:
         result = execute_query(
             """UPDATE cart_items SET qta = %s, source = %s, last_updated_by = %s
                WHERE id = %s AND session_id = %s RETURNING id""",
-            (qta, source, source, cart_item_id, session["id"]),
+            (qta, source, source, cart_item_id, session_id),
         )
         return len(result) > 0
 
     def clear_cart(self, user_id: int) -> None:
         session = self.get_active_session(user_id)
-        if not session: return
+        if not session:
+            return
+        self.clear_cart_by_session(session["id"])
+
+    def clear_cart_by_session(self, session_id: int) -> None:
         execute_query(
             "DELETE FROM cart_items WHERE session_id = %s",
-            (session["id"],),
+            (session_id,),
             fetch=False,
         )
 
@@ -384,11 +402,59 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
 
         return order_id
 
+    def _build_order_conditions(self, base_where: str, params: list,
+                                 search: str, date_from: Optional[str],
+                                 date_to: Optional[str],
+                                 extra_joins: str = "") -> tuple[str, list]:
+        """Helper per costruire WHERE clause condizionali."""
+        conditions = []
+        p = list(params)
+
+        if search:
+            conditions.append("CAST(o.id AS TEXT) ILIKE %s")
+            p.append(f"%{search}%")
+
+        if date_from:
+            conditions.append("o.data_ord >= %s::date")
+            p.append(date_from)
+
+        if date_to:
+            conditions.append("o.data_ord <= %s::date")
+            p.append(date_to)
+
+        if conditions:
+            where = extra_joins + " WHERE " + base_where + " AND " + " AND ".join(conditions)
+        else:
+            where = extra_joins + " WHERE " + base_where
+
+        return where, p
+
+    def _safe_sort(self, sort_by: str, sort_dir: str, allowed: list[str]) -> tuple[str, str]:
+        col = sort_by if sort_by in allowed else "data_ord"
+        direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+        return col, direction
+
     def get_orders_by_client(self, cod_cli: int, page: int = 0,
-                             limit: int = 15) -> list[dict]:
+                             limit: int = 15,
+                             search: str = "",
+                             sort_by: str = "data_ord",
+                             sort_dir: str = "desc",
+                             date_from: Optional[str] = None,
+                             date_to: Optional[str] = None) -> list[dict]:
         offset = page * limit
+        sort_col, sort_dir_san = self._safe_sort(sort_by, sort_dir, ["data_ord", "id", "item_count"])
+
+        base_where = "cod_cli = %s"
+        params = [cod_cli]
+
+        where_clause, query_params = self._build_order_conditions(
+            base_where, params, search, date_from, date_to
+        )
+
+        order_clause = f"ORDER BY o.{sort_col} {sort_dir_san}, o.id {sort_dir_san}"
+
         return execute_query(
-            """SELECT
+            f"""SELECT
                  o.id AS order_id,
                  o.data_ord,
                  o.session_id,
@@ -409,12 +475,74 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
                FROM (
                  SELECT id, data_ord, session_id
                  FROM orders
-                 WHERE cod_cli = %s
-                 ORDER BY data_ord DESC, id DESC
+                 {where_clause}
+                 {order_clause}
                  LIMIT %s OFFSET %s
                ) o
-               ORDER BY o.data_ord DESC, o.id DESC""",
-            (cod_cli, limit, offset),
+               {order_clause}""",
+            query_params + [limit, offset],
+        )
+
+    def get_all_orders(self, page: int = 0, limit: int = 15,
+                       search: str = "",
+                       sort_by: str = "data_ord",
+                       sort_dir: str = "desc",
+                       date_from: Optional[str] = None,
+                       date_to: Optional[str] = None,
+                       search_cod_cli: str = "",
+                       search_rag_soc: str = "") -> list[dict]:
+        offset = page * limit
+        sort_col, sort_dir_san = self._safe_sort(sort_by, sort_dir, ["data_ord", "id", "cod_cli", "rag_soc", "item_count"])
+
+        conditions = []
+        params: list = []
+
+        if search:
+            conditions.append("CAST(o.id AS TEXT) ILIKE %s")
+            params.append(f"%{search}%")
+        if date_from:
+            conditions.append("o.data_ord >= %s::date")
+            params.append(date_from)
+        if date_to:
+            conditions.append("o.data_ord <= %s::date")
+            params.append(date_to)
+        if search_cod_cli:
+            conditions.append("CAST(o.cod_cli AS TEXT) ILIKE %s")
+            params.append(f"%{search_cod_cli}%")
+        if search_rag_soc:
+            conditions.append("LOWER(an.rag_soc) LIKE LOWER(%s)")
+            params.append(f"%{search_rag_soc}%")
+
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+        order_clause = f"ORDER BY o.{sort_col} {sort_dir_san}, o.id {sort_dir_san}"
+
+        return execute_query(
+            f"""SELECT
+                 o.id AS order_id,
+                 o.data_ord,
+                 o.session_id,
+                 o.cod_cli,
+                 an.rag_soc,
+                 (SELECT COUNT(DISTINCT oi.id) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+                 (SELECT COALESCE(SUM(oi.qta_ordinata), 0) FROM order_items oi WHERE oi.order_id = o.id) AS total_qty,
+                 (SELECT COUNT(*) FROM chat_messages cm WHERE cm.session_id = o.session_id) AS message_count,
+                 (
+                   SELECT json_agg(sub)
+                   FROM (
+                     SELECT oi2.cod_art, a.des_art, oi2.qta_ordinata
+                     FROM order_items oi2
+                     LEFT JOIN anaart a ON a.cod_art = oi2.cod_art
+                     WHERE oi2.order_id = o.id
+                     ORDER BY oi2.id ASC
+                     LIMIT 3
+                   ) sub
+                 ) AS preview_items
+               FROM orders o
+               LEFT JOIN anacli an ON o.cod_cli = an.cod_cli
+               {where_clause}
+               {order_clause}
+               LIMIT %s OFFSET %s""",
+            params + [limit, offset],
         )
 
     def get_order_detail(self, order_id: int, cod_cli: int) -> Optional[dict]:
@@ -615,3 +743,138 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository):
                LIMIT %s""",
             (cod_cli, limit),
         )
+
+    # =======================================================================
+    # ITicketRepository
+    # =======================================================================
+
+    def create_ticket(self, session_id: int, cod_cli: int) -> dict:
+        row = execute_query_one(
+            """INSERT INTO tickets (session_id, cod_cli, status)
+               VALUES (%s, %s, 'aperto')
+               RETURNING id, session_id, cod_cli, status, locked_by, created_at, updated_at""",
+            (session_id, cod_cli),
+        )
+        return row  # type: ignore
+
+    def get_ticket_by_session(self, session_id: int, cod_cli: Optional[int] = None) -> Optional[dict]:
+        if cod_cli is not None:
+            return execute_query_one(
+                """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
+                   FROM tickets
+                   WHERE session_id = %s
+                     AND cod_cli = %s
+                     AND status != 'chiuso'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (session_id, cod_cli),
+            )
+        return execute_query_one(
+            """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
+               FROM tickets
+               WHERE session_id = %s
+                 AND status != 'chiuso'
+               ORDER BY created_at DESC LIMIT 1""",
+            (session_id,),
+        )
+
+    def get_open_tickets(self) -> list[dict]:
+        return execute_query(
+            """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
+               FROM tickets
+               WHERE status IN ('aperto', 'in_lavorazione')
+               ORDER BY created_at ASC""",
+            (),
+        )
+
+    def get_ticket_by_id(self, ticket_id: int) -> Optional[dict]:
+        return execute_query_one(
+            """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
+               FROM tickets WHERE id = %s LIMIT 1""",
+            (ticket_id,),
+        )
+
+    def lock_ticket(self, ticket_id: int, operator_id: int) -> bool:
+        result = execute_query(
+            """UPDATE tickets
+               SET status = 'in_lavorazione',
+                   locked_by = %s,
+                   updated_at = NOW()
+               WHERE id = %s
+                 AND status != 'chiuso'
+               RETURNING id, session_id""",
+            (operator_id, ticket_id),
+        )
+        if result:
+            session_id = result[0].get("session_id")
+            if session_id:
+                self._save_system_message(session_id, "Un operatore ha preso in carico il ticket di assistenza.")
+        return len(result) > 0
+
+    def unlock_ticket(self, ticket_id: int) -> None:
+        row = execute_query_one(
+            """UPDATE tickets
+               SET locked_by = NULL, updated_at = NOW()
+               WHERE id = %s
+               RETURNING session_id""",
+            (ticket_id,),
+        )
+        if row and row.get("session_id"):
+            self._save_system_message(row["session_id"], "L'operatore ha rilasciato il ticket. Puoi continuare a chattare.")
+        else:
+            execute_query(
+                """UPDATE tickets
+                   SET locked_by = NULL, updated_at = NOW()
+                   WHERE id = %s""",
+                (ticket_id,),
+                fetch=False,
+            )
+
+    def close_ticket(self, ticket_id: int) -> None:
+        row = execute_query_one(
+            """UPDATE tickets
+               SET status = 'chiuso', locked_by = NULL, updated_at = NOW()
+               WHERE id = %s
+               RETURNING session_id""",
+            (ticket_id,),
+        )
+        if row and row.get("session_id"):
+            self._save_system_message(row["session_id"], "Il ticket di assistenza è stato chiuso. L'assistente AI è di nuovo disponibile per questa sessione.")
+        else:
+            execute_query(
+                """UPDATE tickets
+                   SET status = 'chiuso', locked_by = NULL, updated_at = NOW()
+                   WHERE id = %s""",
+                (ticket_id,),
+                fetch=False,
+            )
+
+    def _save_system_message(self, session_id: int, content: str) -> None:
+        """Helper interno per salvare messaggi di sistema nella chat."""
+        try:
+            execute_query(
+                """INSERT INTO chat_messages (session_id, sender, content)
+                   VALUES (%s, 'system', %s)""",
+                (session_id, content),
+                fetch=False,
+            )
+        except Exception:
+            pass  # Non fallire l'operazione principale se il messaggio non si salva
+
+    def get_last_message_time(self, session_id: int) -> Optional[str]:
+        row = execute_query_one(
+            """SELECT created_at FROM chat_messages
+               WHERE session_id = %s
+               ORDER BY created_at DESC LIMIT 1""",
+            (session_id,),
+        )
+        return row["created_at"] if row else None
+
+    def send_message(self, session_id: int, sender: str, content: str) -> int:
+        """Salva un messaggio nella chat (operator o customer)."""
+        row = execute_query_one(
+            """INSERT INTO chat_messages (session_id, sender, content)
+               VALUES (%s, %s, %s)
+               RETURNING id""",
+            (session_id, sender, content),
+        )
+        return row["id"]  # type: ignore

@@ -1,21 +1,12 @@
-# ===========================================================================
-# controllers/register_controller.py — Controller registrazione (Layer 1)
-#
-# Endpoint: POST /auth/register
-# Tenuto separato dal controller auth principale (sarà rimosso in futuro).
-# ===========================================================================
-
 from fastapi import APIRouter, Depends, HTTPException
 from domain.schemas import RegisterRequest
 from services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["register"])
 
-
 def _get_auth_service() -> AuthService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
-
 
 @router.post("/register")
 def register(body: RegisterRequest,

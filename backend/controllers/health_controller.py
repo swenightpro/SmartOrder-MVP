@@ -1,13 +1,6 @@
-# ===========================================================================
-# controllers/health_controller.py — Controller health check (Layer 1)
-#
-# Endpoint: GET /health
-# ===========================================================================
-
 from fastapi import APIRouter
 
 router = APIRouter(tags=["health"])
-
 
 @router.get("/health")
 def health_check():

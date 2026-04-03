@@ -1,27 +1,19 @@
-// ============================================================
-// components/chat/ChatPanel.tsx — Pannello chat AI principale
-//
-// Orchestratore della conversazione: gestisce invio messaggi,
-// registrazione vocale, conferma ordini e modifiche carrello.
-// Consuma useCart() e useSession() via Dependency Injection.
-// Delega le chiamate API ai Facade chatService e feedbackService.
-// Compone AiStatusDot, FeedbackModal e ChatMessage.
-// ============================================================
-
 "use client";
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Client, Message, SuggestedProduct, CartEditItem } from '@/types';
-import { chatService, feedbackService, cartService } from '@/services';
+import { chatService, feedbackService, cartService, ticketService } from '@/services';
 import { useCart, useSession } from '@/contexts';
+import { useSSE } from '@/hooks';
 import AiStatusDot from './AiStatusDot';
 import { default as FeedbackModal } from './FeedbackModal';
 import { formatChatMessage, extractBoldProducts } from './ChatMessage';
 
 interface ChatPanelProps {
   selectedClient: Client | null;
+  hasOpenTicket?: boolean;
 }
 
-export default function ChatPanel({ selectedClient }: ChatPanelProps) {
+export default function ChatPanel({ selectedClient, hasOpenTicket = false }: ChatPanelProps) {
   const { refreshCart } = useCart();
   const { sessionId, chatMessages: messages, setChatMessages: setMessages, handleNewSession: onNewSession } = useSession();
   const [input, setInput] = useState('');
@@ -29,6 +21,9 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingCartEdits, setPendingCartEdits] = useState<CartEditItem[] | null>(null);
   const [feedbackModalMessageId, setFeedbackModalMessageId] = useState<string | null>(null);
+  // Ticket mode state
+  const [ticketId, setTicketId] = useState<number | null>(null);
+  const [ticketMessages, setTicketMessages] = useState<Message[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -43,7 +38,40 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
   // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, ticketMessages]);
+
+  // Fetch ticket ID when ticket opens
+  useEffect(() => {
+    if (!hasOpenTicket || !sessionId) {
+      setTicketId(null);
+      setTicketMessages([]);
+      return;
+    }
+    ticketService.getTicketBySession(sessionId)
+      .then(ticket => {
+        if (ticket) {
+          setTicketId(ticket.id);
+          setTicketMessages([]);
+        }
+      })
+      .catch(() => {});
+  }, [hasOpenTicket, sessionId]);
+
+  // SSE: receive operator messages in ticket mode
+  useSSE(sessionId ? `/sse/${sessionId}` : null, {
+    onEvent: (event) => {
+      if (event.type === 'message' && hasOpenTicket) {
+        const msg = event.data as { id: number; sender: string; content: string };
+        // Only show operator/assistant messages (not user own messages)
+        if (msg.sender !== 'user') {
+          setTicketMessages(prev => {
+            if (prev.some(m => m.id === String(msg.id))) return prev;
+            return [...prev, { id: String(msg.id), role: 'assistant', content: msg.content }];
+          });
+        }
+      }
+    },
+  });
 
   // Audio Visualizer
   useEffect(() => {
@@ -98,7 +126,6 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
       streamRef.current?.getTracks().forEach(track => track.stop());
     };
   }, []);
-
 
   // --- Recording ---
   const startRecording = async () => {
@@ -171,6 +198,25 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
   const sendMessageContent = async (userMessage: string, isVoice = false) => {
     if (!selectedClient) return;
     const displayContent = isVoice ? `🎙️ ${userMessage}` : userMessage;
+
+    // --- Ticket mode: send to operator ---
+    if (hasOpenTicket && sessionId) {
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: displayContent };
+      setTicketMessages(prev => [...prev, userMsg]);
+      setIsLoading(true);
+      try {
+        await ticketService.sendCustomerMessage(sessionId, userMessage);
+        // Operator response comes via SSE - added to ticketMessages
+      } catch (e) {
+        setTicketMessages(prev => prev.filter(m => m.id !== userMsg.id));
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // --- Normal AI chat ---
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: displayContent };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
@@ -337,7 +383,9 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
         {selectedClient && (
           <button
             onClick={onNewSession}
-            className="text-[10px] font-bold text-[hsl(234,60%,36%)] bg-[hsl(234,60%,96%)] border border-[hsl(234,60%,85%)] px-2.5 py-1 rounded-full hover:bg-[hsl(234,60%,92%)] transition-colors"
+            disabled={hasOpenTicket}
+            title={hasOpenTicket ? 'Chiudi prima il ticket di assistenza per avviare una nuova sessione' : undefined}
+            className="text-[10px] font-bold text-[hsl(234,60%,36%)] bg-[hsl(234,60%,96%)] border border-[hsl(234,60%,85%)] px-2.5 py-1 rounded-full hover:bg-[hsl(234,60%,92%)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Nuova sessione
           </button>
@@ -350,7 +398,38 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
           <div className="h-full flex items-center justify-center text-center p-8">
             <p className="text-gray-400 italic text-sm">Identifica un cliente per iniziare</p>
           </div>
+        ) : hasOpenTicket ? (
+          // Ticket mode: show conversation with operator
+          <>
+            {/* Ticket banner */}
+            <div className="flex items-center justify-center gap-2 mb-3 px-3 py-2 bg-[hsl(234,60%,96%)] border border-[hsl(234,60%,88%)] rounded-xl">
+              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <p className="text-[11px] font-bold text-[hsl(234,60%,36%)]">Chatta con l&apos;operatore</p>
+            </div>
+            {ticketMessages.length === 0 && (
+              <div className="flex items-center justify-center h-24 text-gray-400 italic text-sm">
+                Inizia la conversazione...
+              </div>
+            )}
+            {ticketMessages.map((m, idx) => (
+              <div key={m.id}>
+                <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`} style={{ animationDelay: `${idx * 30}ms` }}>
+                  <div className={`max-w-[82%] px-4 py-3 text-[14px] leading-relaxed shadow-sm ${m.role === 'user'
+                    ? 'bg-gradient-to-br from-[hsl(234,62%,30%)] to-[hsl(234,55%,40%)] text-white rounded-2xl rounded-br-md'
+                    : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-bl-md'
+                    }`}>
+                    {m.role === "assistant" ? (
+                      <span className="break-words [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: formatChatMessage(m.content) }} />
+                    ) : (
+                      m.content
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
         ) : (
+          // Normal AI chat mode
           messages.map((m, idx) => (
             <div key={m.id}>
               <div className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`} style={{ animationDelay: `${idx * 30}ms` }}>
@@ -401,7 +480,6 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
                   </button>
                 </div>
               )}
-
             </div>
           ))
         )}
@@ -451,7 +529,7 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
                 }
               }}
               placeholder={selectedClient ? "Scrivi un messaggio..." : "Seleziona cliente..."}
-              className="flex-1 bg-gray-50 rounded-2xl px-4 text-sm outline-none focus:bg-white transition-all text-gray-900 border-2 border-transparent focus:border-[hsl(234,60%,80%)] disabled:cursor-not-allowed placeholder:text-gray-400"
+              className="flex-1 bg-gray-50 rounded-2xl px-4 text-sm outline-none focus:bg-white transition-all text-gray-900 border-2 border-transparent focus:border-[hsl(234,60%,80%)] disabled:cursor-not-allowed placeholder:text-gray-400 disabled:bg-gray-100"
             />
             <button
               onClick={() => {
@@ -462,7 +540,7 @@ export default function ChatPanel({ selectedClient }: ChatPanelProps) {
                   startRecording();
                 }
               }}
-              disabled={!selectedClient && !input.trim()}
+              disabled={(!selectedClient && !input.trim()) || isLoading}
               className={`w-12 h-12 rounded-2xl shadow-sm flex items-center justify-center transition-all active:scale-95 ${input.trim()
                 ? 'bg-[hsl(234,60%,36%)] text-white hover:bg-[hsl(234,60%,30%)]'
                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'

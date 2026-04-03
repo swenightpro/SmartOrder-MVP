@@ -1,11 +1,3 @@
-// ============================================================
-// components/auth/UserProfilePanel.tsx — Pannello area personale
-//
-// Mostra il profilo dell'utente autenticato (email, ragione
-// sociale, date), consente il cambio password e il logout.
-// Tutte le operazioni sono delegate al Facade authService.
-// ============================================================
-
 "use client";
 import { useState, useEffect } from 'react';
 import type { Client, UserProfile } from '@/types';
@@ -18,8 +10,14 @@ interface UserProfilePanelProps {
 
 function formatDate(d: string | null | undefined): string {
     if (!d) return '—';
-    try { return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' }); }
-    catch { return '—'; }
+    try {
+        const dt = new Date(d);
+        const day = String(dt.getUTCDate()).padStart(2, '0');
+        const months = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+        const month = months[dt.getUTCMonth()];
+        const year = dt.getUTCFullYear();
+        return `${day} ${month} ${year}`;
+    } catch { return '—'; }
 }
 
 export default function UserProfilePanel({ client, onLogout }: UserProfilePanelProps) {

@@ -1,11 +1,3 @@
-// ============================================================
-// components/auth/LoginForm.tsx — Form di autenticazione utente
-//
-// Gestisce l'input email/password e la validazione lato client.
-// Delega l'autenticazione al Facade authService.login().
-// In caso di successo notifica il parent tramite callback onLogin.
-// ============================================================
-
 "use client";
 import { useState } from 'react';
 import Image from 'next/image';
@@ -29,6 +21,10 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
         setLoading(true);
         try {
             const user = await authService.login(email.trim(), password);
+            if (user.role === 'admin') {
+                window.location.href = '/operatore';
+                return;
+            }
             onLogin({ cod_cli: user.cod_cli, rag_soc: user.rag_soc });
             setPassword('');
         } catch (e) { setError(e instanceof Error ? e.message : 'Errore di rete durante il login'); }

@@ -1,11 +1,3 @@
-// ============================================================
-// components/chat/FeedbackModal.tsx — Modale motivo feedback negativo
-//
-// Si apre quando l'utente preme il pollice giù: consente di
-// selezionare una categoria (hallucination, missing info, ecc.)
-// e aggiungere un commento testuale opzionale prima di inviare.
-// ============================================================
-
 "use client";
 import { useState } from 'react';
 

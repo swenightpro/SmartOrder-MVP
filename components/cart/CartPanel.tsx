@@ -1,12 +1,3 @@
-// ============================================================
-// components/cart/CartPanel.tsx — Pannello gestione carrello
-//
-// Orchestratore della sezione carrello: compone ProductSearch,
-// ProductCard e CartItemRow. Gestisce aggiunta, rimozione,
-// modifica quantità e invio ordine. Consuma useCart() e
-// useSession() via Dependency Injection (React Context).
-// ============================================================
-
 "use client";
 import { useState } from 'react';
 import type { Client, Product } from '@/types';
@@ -16,6 +7,7 @@ import ProductSearch from './ProductSearch';
 import ProductCard from './ProductCard';
 import CartItemRow from './CartItemRow';
 import { EmptyState } from '@/components/ui';
+import { useSSE } from '@/hooks';
 
 const BLOCKING_STATUSES = ["ARTICOLO SOSPESO", "SU AUTORIZZAZIONE", "DISPONIBILE DAL", "NON DISPONIBILE"];
 
@@ -27,11 +19,20 @@ interface CartPanelProps {
 }
 
 export default function CartPanel({ currentClient, onClose, onOrderSuccess, isMobile = false }: CartPanelProps) {
-  const { cart, addItem, removeItem, updateQty } = useCart();
+  const { cart, addItem, removeItem, updateQty, refreshCart } = useCart();
   const { sessionId } = useSession();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [error, setError] = useState('');
   const [blockedItems, setBlockedItems] = useState<Set<number>>(new Set());
+
+  // SSE: real-time cart updates (from operator changes or ticket session)
+  useSSE(sessionId ? `/sse/${sessionId}` : null, {
+      onEvent: (event) => {
+          if (event.type === 'cart_update') {
+              refreshCart();
+          }
+      },
+  });
 
   // --- Cart operations (delegate to CartContext for optimistic updates) ---
   const addToCart = async (qty: number) => {

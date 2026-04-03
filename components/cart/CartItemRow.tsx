@@ -1,11 +1,3 @@
-// ============================================================
-// components/cart/CartItemRow.tsx — Riga singola articolo nel carrello
-//
-// Visualizza un articolo con codice, descrizione, badge stato,
-// stepper quantità e pulsante rimuovi. Delega le operazioni
-// di modifica/rimozione al componente parent CartPanel.
-// ============================================================
-
 "use client";
 import { useState } from 'react';
 import type { CartItem } from '@/types';

@@ -1,11 +1,3 @@
-// ============================================================
-// services/chatService.ts — Facade per chat AI e trascrizione
-//
-// Espone sendMessage (invio messaggio alla IA), getMessages
-// (storico sessione) e transcribe (speech-to-text via Whisper).
-// Consumato da ChatPanel per l'interazione conversazionale.
-// ============================================================
-
 import { apiFetch, getApiErrorMessage } from '@/lib/apiClient';
 import type { Message } from '@/types';
 
@@ -55,15 +47,16 @@ export const chatService = {
         const data = await res.json();
         const apiMessages = Array.isArray(data.messages) ? data.messages : [];
 
-        return apiMessages.map((msg: any) => {
-            let suggestedProducts = [];
+        return apiMessages.map((msg: { id: number; sender: string; content: string; metadata?: string | Record<string, unknown> }) => {
+            let suggestedProducts: unknown[] = [];
 
             try {
                 if (typeof msg.metadata === 'string') {
-                    const parsed = JSON.parse(msg.metadata);
-                    suggestedProducts = parsed?.suggested_products || [];
+                    const parsed = JSON.parse(msg.metadata) as Record<string, unknown>;
+                    suggestedProducts = Array.isArray(parsed?.suggested_products) ? parsed.suggested_products : [];
                 } else if (msg.metadata) {
-                    suggestedProducts = msg.metadata.suggested_products || [];
+                    const meta = msg.metadata as Record<string, unknown>;
+                    suggestedProducts = Array.isArray(meta.suggested_products) ? meta.suggested_products : [];
                 }
             } catch (e) {
                 console.error('Error parsing metadata', e);

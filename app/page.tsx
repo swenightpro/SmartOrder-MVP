@@ -1,59 +1,59 @@
-// ============================================================
-// app/page.tsx — Orchestratore principale dell'applicazione
-//
-// Questo file gestisce il layout (desktop + mobile), la navigazione
-// tra tab, e coordina i Context provider (Dependency Injection).
-// NON contiene logica di business: stato del carrello, sessione e
-// messaggi sono delegati a CartProvider e SessionProvider.
-//
-// Design Pattern: Dependency Injection (via React Context)
-// I provider iniettano stato e operazioni nei componenti figli,
-// eliminando il prop drilling.
-// ============================================================
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import type { Client } from "@/types";
-import { authService, sessionService, chatService } from "@/services";
+import { authService, sessionService, chatService, ticketService } from "@/services";
 import { CartProvider, SessionProvider, useCart, useSession } from "@/contexts";
 import { ChatPanel } from "@/components/chat";
 import { CartPanel } from "@/components/cart";
 import { AuthOverlay } from "@/components/auth";
 import { OrderHistory } from "@/components/orders";
-import { TopBar, MobileTabBar } from "@/components/layout";
+import { TopBar, MobileTabBar, AssistenzaModal } from "@/components/layout";
+import { useSSE } from "@/hooks";
 
 // ── Componente interno che consuma i Context ──────────────────
-function AppContent({ selectedClient, onClientChange }: {
+function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
   selectedClient: Client | null;
   onClientChange: (c: Client | null) => void;
+  onSessionIdChange: (id: number | null) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"create" | "history">("create");
   const [refreshKey, setRefreshKey] = useState(0);
   const [showClientSelector, setShowClientSelector] = useState(true);
-  const [mobilePanel, setMobilePanel] = useState<"chat" | "cart" | "history">("chat");
+  const [mobilePanel, setMobilePanel] = useState<"chat" | "cart" | "history" | "assistenza">("chat");
+  const [hasOpenTicket, setHasOpenTicket] = useState(false);
+  const [showAssistenza, setShowAssistenza] = useState(false);
 
   const { cart, refreshCart, clearCart } = useCart();
-  const { initSession, showNewSessionModal, cancelNewSession, confirmNewSession, setChatMessages } = useSession();
+  const { initSession, showNewSessionModal, cancelNewSession, confirmNewSession, setChatMessages, sessionId } = useSession();
   const handleConfirmNewSession = useCallback(async () => {
     await confirmNewSession();
     clearCart();
   }, [confirmNewSession, clearCart]);
 
-
-  // Carica sessione auth esistente
+  // Carica sessione auth esistente + redirect operatore — eseguito SOLO al mount
   useEffect(() => {
+    let cancelled = false;
     const loadSession = async () => {
       try {
         const profile = await authService.getProfile();
+        if (cancelled) return;
+        if (profile?.role === 'admin') {
+          window.location.href = '/operatore';
+          return;
+        }
         if (profile?.cod_cli && profile?.rag_soc) {
           onClientChange({ cod_cli: Number(profile.cod_cli), rag_soc: profile.rag_soc });
           setShowClientSelector(false);
         } else { setShowClientSelector(true); }
-      } catch { setShowClientSelector(true); }
+      } catch {
+        if (!cancelled) setShowClientSelector(true);
+      }
     };
     loadSession();
-  }, [onClientChange]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // esegue solo al mount — non dipende da onClientChange
 
   // Inizializza carrello e sessione quando il client cambia
   useEffect(() => {
@@ -61,6 +61,7 @@ function AppContent({ selectedClient, onClientChange }: {
       if (selectedClient) {
         refreshCart();
         const sessionId = await initSession();
+        onSessionIdChange(sessionId);
 
         let historyLoaded = false;
         if (sessionId) {
@@ -85,7 +86,7 @@ function AppContent({ selectedClient, onClientChange }: {
     };
 
     setupSessionAndChat();
-  }, [selectedClient, refreshCart, initSession, setChatMessages, clearCart]);
+  }, [selectedClient, refreshCart, initSession, setChatMessages, clearCart, onSessionIdChange]);
 
   const handleOrderSuccess = useCallback(async () => {
     setRefreshKey((k) => k + 1);
@@ -106,10 +107,36 @@ function AppContent({ selectedClient, onClientChange }: {
     if (c) setShowClientSelector(false);
   };
 
-  const handleMobileTabChange = (panel: 'chat' | 'cart' | 'history') => {
+  const handleMobileTabChange = (panel: 'chat' | 'cart' | 'history' | 'assistenza') => {
+    if (panel === 'assistenza') {
+      setShowAssistenza(true);
+      return;
+    }
     setMobilePanel(panel);
     setActiveTab(panel === 'history' ? 'history' : 'create');
   };
+
+  // Check ticket on session change
+  useEffect(() => {
+    if (!sessionId) return;
+    ticketService.getTicketBySession(sessionId)
+      .then(t => setHasOpenTicket(!!t))
+      .catch(() => setHasOpenTicket(false));
+  }, [sessionId]);
+
+  // SSE: real-time ticket status updates
+  useSSE(sessionId ? `/sse/${sessionId}` : null, {
+    onEvent: (event) => {
+      if (event.type === 'ticket_update') {
+        const update = event.data as { status: string };
+        if (update.status === 'chiuso') {
+          setHasOpenTicket(false);
+        } else {
+          setHasOpenTicket(true);
+        }
+      }
+    },
+  });
 
   return (
     <main className="h-screen flex flex-col overflow-hidden">
@@ -161,16 +188,29 @@ function AppContent({ selectedClient, onClientChange }: {
         </div>
       )}
 
-      <TopBar onProfileClick={() => setShowClientSelector(true)} />
+      <TopBar onProfileClick={() => setShowClientSelector(true)} onAssistenzaClick={() => setShowAssistenza(true)} hasOpenTicket={hasOpenTicket} />
 
       {selectedClient && (
-        <MobileTabBar activePanel={mobilePanel} cartCount={cart.length} onTabChange={handleMobileTabChange} />
+        <MobileTabBar activePanel={mobilePanel} cartCount={cart.length} onTabChange={handleMobileTabChange} hasOpenTicket={hasOpenTicket} />
+      )}
+
+      {/* Assistenza modal */}
+      {showAssistenza && (
+        <AssistenzaModal
+          sessionId={sessionId}
+          onClose={() => setShowAssistenza(false)}
+          onTicketChange={() => {
+            if (sessionId) {
+              ticketService.getTicketBySession(sessionId).then(t => setHasOpenTicket(!!t)).catch(() => setHasOpenTicket(false));
+            }
+          }}
+        />
       )}
 
       {/* DESKTOP LAYOUT */}
       <div className="hidden md:flex flex-1 overflow-hidden gap-3 p-3">
         <div className="w-[45%] bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <ChatPanel selectedClient={selectedClient} />
+          <ChatPanel selectedClient={selectedClient} hasOpenTicket={hasOpenTicket} />
         </div>
 
         <div className="w-[55%] flex flex-col gap-3">
@@ -209,7 +249,7 @@ function AppContent({ selectedClient, onClientChange }: {
       <div className="md:hidden flex-1 flex flex-col overflow-hidden">
         {mobilePanel === "chat" && (
           <div className="flex-1 bg-white overflow-hidden">
-            <ChatPanel selectedClient={selectedClient} />
+            <ChatPanel selectedClient={selectedClient} hasOpenTicket={hasOpenTicket} />
           </div>
         )}
         {mobilePanel === "cart" && (
@@ -238,15 +278,16 @@ function AppContent({ selectedClient, onClientChange }: {
 // ── Componente root — inietta i provider ──────────────────────
 export default function Home() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [sessionId, setSessionId] = useState<number | null>(null);
 
   return (
-    <CartProvider codCli={selectedClient?.cod_cli}>
+    <CartProvider codCli={selectedClient?.cod_cli} sessionId={sessionId}>
       <SessionProvider clientName={selectedClient?.rag_soc} onSessionReset={() => {
         // Svuota il carrello nella UI quando viene confermata una nuova sessione
         // clearCart è accessibile qui perché siamo dentro <CartProvider>
       }}>
 
-        <AppContent selectedClient={selectedClient} onClientChange={setSelectedClient} />
+        <AppContent selectedClient={selectedClient} onClientChange={setSelectedClient} onSessionIdChange={setSessionId} />
       </SessionProvider>
     </CartProvider>
   );

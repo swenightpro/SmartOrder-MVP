@@ -1,11 +1,3 @@
-// ============================================================
-// components/chat/AiStatusDot.tsx — Indicatore stato backend
-//
-// Pallino colorato (verde/rosso/giallo) che mostra in tempo reale
-// se il backend Python è raggiungibile. Usa l'hook useHealthCheck
-// (pattern Observer) per polling periodico dello stato.
-// ============================================================
-
 "use client";
 
 import { useHealthCheck } from '@/hooks';

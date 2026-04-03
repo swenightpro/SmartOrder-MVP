@@ -1,11 +1,3 @@
-// ============================================================
-// components/cart/ProductCard.tsx — Card di conferma prodotto selezionato
-//
-// Mostra il dettaglio del prodotto scelto dalla ricerca, con
-// stepper quantità e pulsante di aggiunta al carrello.
-// Usa il componente atomico QuantityStepper per l'input numerico.
-// ============================================================
-
 "use client";
 import { useState } from 'react';
 import type { Product } from '@/types';

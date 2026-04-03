@@ -1,9 +1,3 @@
-# ===========================================================================
-# services/product_service.py — Application Service per prodotti
-#
-# Gestisce la ricerca e i filtri avanzati.
-# ===========================================================================
-
 class ProductService:
     def __init__(self, product_repo):
         # type hint rimosso per semplicità, usa PostgresAdapter (implementa il repository indirettamente)

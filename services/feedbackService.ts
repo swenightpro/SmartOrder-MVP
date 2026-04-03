@@ -1,10 +1,3 @@
-// ============================================================
-// services/feedbackService.ts — Facade per feedback risposte AI
-//
-// Espone submit (pollice su/giù con categoria e commento) e
-// delete (rimozione feedback). Consumato da FeedbackButtons.
-// ============================================================
-
 import { apiFetch } from '@/lib/apiClient';
 
 export const feedbackService = {

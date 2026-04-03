@@ -1,22 +1,9 @@
-# ===========================================================================
-# domain/schemas.py — Pydantic DTO per request/response delle API
-#
-# Definisce i modelli di validazione usati dai controller FastAPI.
-# Migrati e riorganizzati da models/schemas.py.
-# ===========================================================================
-
 from pydantic import BaseModel, Field
 from typing import Optional
-
-
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
 
 class LoginRequest(BaseModel):
     email: str
     password: str
-
 
 class RegisterRequest(BaseModel):
     email: str
@@ -24,11 +11,9 @@ class RegisterRequest(BaseModel):
     role: str = "customer"
     cod_cli: Optional[int] = None
 
-
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
-
 
 class UserResponse(BaseModel):
     email: str
@@ -38,18 +23,12 @@ class UserResponse(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
-
-# ---------------------------------------------------------------------------
-# Chat / Conversation
-# ---------------------------------------------------------------------------
-
 class ChatRequest(BaseModel):
     message: str
     clientId: int
     history: list[dict] = Field(default_factory=list)
     session_id: Optional[int] = None
     pending_cart_edits: Optional[list] = None
-
 
 class ChatResponse(BaseModel):
     success: bool = True
@@ -65,11 +44,6 @@ class ChatResponse(BaseModel):
     cart_edits: Optional[list[dict]] = None
     edit_confirmed: Optional[bool] = None
 
-
-# ---------------------------------------------------------------------------
-# Cart
-# ---------------------------------------------------------------------------
-
 class CartActionRequest(BaseModel):
     action: str  # "add", "remove", "update_quantity"
     cod_art: Optional[str] = None
@@ -78,11 +52,7 @@ class CartActionRequest(BaseModel):
     source: Optional[str] = "customer"
     ai_confidence: Optional[float] = None
     related_message_id: Optional[int] = None
-
-
-# ---------------------------------------------------------------------------
-# Orders
-# ---------------------------------------------------------------------------
+    session_id: Optional[int] = None
 
 class OrderItemRequest(BaseModel):
     cod_art: str
@@ -92,16 +62,10 @@ class OrderItemRequest(BaseModel):
     ai_confidence: Optional[float] = None
     related_message_id: Optional[int] = None
 
-
 class CreateOrderRequest(BaseModel):
     cod_cli: Optional[int] = None
     session_id: Optional[int] = None
     items: list[OrderItemRequest]
-
-
-# ---------------------------------------------------------------------------
-# Feedback
-# ---------------------------------------------------------------------------
 
 class FeedbackRequest(BaseModel):
     message_id: int
@@ -109,3 +73,21 @@ class FeedbackRequest(BaseModel):
     reason_category: Optional[str] = None
     comment: Optional[str] = None
     action: Optional[str] = None  # "delete" per rimozione
+
+class CreateTicketRequest(BaseModel):
+    session_id: int
+
+class TicketLockRequest(BaseModel):
+    operator_id: Optional[int] = None
+
+class SendMessageRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=2000)
+
+class CloseTicketRequest(BaseModel):
+    closed_by: str = Field(default="operator")  # "operator" o "customer"
+
+class TicketResponse(BaseModel):
+    ticket: dict
+
+class TicketListResponse(BaseModel):
+    tickets: list[dict]

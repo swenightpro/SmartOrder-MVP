@@ -1,15 +1,3 @@
-// ============================================================
-// types/index.ts — Definizioni TypeScript condivise (Single Source of Truth)
-//
-// Centralizza TUTTE le interfacce usate in frontend: entità
-// di dominio (Client, Product, CartItem), chat (Message,
-// SuggestedProduct), ordini (OrderSummary, OrderDetail),
-// autenticazione (UserProfile) e health check (HealthStatus).
-// Importato da componenti, services, hooks e contexts.
-// ============================================================
-
-// --- Entità di dominio ---
-
 export interface Client {
     cod_cli: number;
     rag_soc: string;
@@ -42,8 +30,6 @@ export interface CartItem {
     related_message_id?: number | null;
 }
 
-// --- Chat ---
-
 export interface SuggestedProduct {
     name: string;
     cod_art?: string;
@@ -64,7 +50,15 @@ export interface CartEditItem {
     new_quantity?: number;
 }
 
-// --- Ordini ---
+export interface OrderFilters {
+    search?: string;
+    sortBy?: string;
+    sortDir?: 'asc' | 'desc';
+    dateFrom?: string;
+    dateTo?: string;
+    searchCodCli?: string;
+    searchRagSoc?: string;
+}
 
 export interface PreviewItem {
     cod_art: string;
@@ -80,6 +74,8 @@ export interface OrderSummary {
     total_qty: number;
     message_count?: number;
     preview_items?: PreviewItem[] | null;
+    cod_cli?: number;
+    rag_soc?: string | null;
 }
 
 export interface OrderItem {
@@ -101,7 +97,7 @@ export interface ChatMessage {
     id: number;
     sender: string;
     content: string;
-    metadata: any;
+    metadata: Record<string, unknown> | string | null;
     created_at: string;
 }
 
@@ -114,8 +110,6 @@ export interface OrderDetail {
     messages: ChatMessage[];
 }
 
-// --- Auth ---
-
 export interface UserProfile {
     email: string;
     cod_cli: number;
@@ -125,7 +119,24 @@ export interface UserProfile {
     updated_at: string | null;
 }
 
-// --- Health ---
+export interface Ticket {
+    id: number;
+    session_id: number;
+    cod_cli: number;
+    rag_soc: string;
+    status: 'aperto' | 'in_lavorazione' | 'chiuso';
+    locked_by?: number | null;
+    operator_name?: string | null;
+    created_at: string;
+    updated_at: string;
+    last_message_at?: string | null;
+    waiting_minutes?: number;
+}
+
+export interface OperatorTicketDetail extends Ticket {
+    messages: ChatMessage[];
+    cart_items: CartItem[];
+}
 
 export interface HealthStatus {
     status: 'healthy' | 'degraded';

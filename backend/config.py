@@ -1,17 +1,8 @@
-# ===========================================================================
-# config.py — Configurazione centralizzata (Pydantic Settings)
-#
-# Carica da variabili d'ambiente. In locale si usa un file .env nella
-# cartella backend/ oppure le variabili vengono passate direttamente.
-# ===========================================================================
-
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
 
-
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
-
 
 class Settings(BaseSettings):
     """Configurazione dell'applicazione."""
@@ -68,7 +59,6 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
-
 
 @lru_cache()
 def get_settings() -> Settings:

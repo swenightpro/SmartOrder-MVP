@@ -1,12 +1,5 @@
-# ===========================================================================
-# ports/i_ai_client.py — Outbound Port per servizi AI
-#
-# Formalizza il contratto verso i servizi di AI generativa e speech-to-text.
-# ===========================================================================
-
 from abc import ABC, abstractmethod
 from typing import IO, Optional
-
 
 class IAIClient(ABC):
     """Contratto verso servizi AI (LLM e speech-to-text)."""

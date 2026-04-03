@@ -1,16 +1,7 @@
-// ============================================================
-// components/auth/AuthOverlay.tsx — Overlay modale di autenticazione
-//
-// Schermo a tutto schermo che contiene la logica di routing tra
-// LoginForm (utente non autenticato) e UserProfilePanel (utente
-// autenticato). Pattern Composite: compone i sotto-componenti auth.
-// ============================================================
-
 "use client";
 import type { Client } from '@/types';
 import LoginForm from './LoginForm';
 import UserProfilePanel from './UserProfilePanel';
-
 
 interface AuthOverlayProps {
   onClientChange: (client: Client | null) => void;

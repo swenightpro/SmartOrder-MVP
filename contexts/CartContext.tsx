@@ -1,16 +1,3 @@
-// ============================================================
-// contexts/CartContext.tsx — Provider globale per lo stato del carrello
-//
-// Design Pattern: Dependency Injection (React Context) + Optimistic Update
-// Centralizza stato e operazioni del carrello, eliminando il prop
-// drilling di cart/refreshCart attraverso l'albero dei componenti.
-// Le operazioni updateQty e removeItem aggiornano lo stato locale
-// immediatamente (optimistic) e sincronizzano col server in
-// background. In caso di errore API, esegue rollback automatico.
-//
-// Dipendenze: cartService (Facade per le API del carrello)
-// ============================================================
-
 "use client";
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
@@ -37,26 +24,27 @@ export function useCart(): CartContextValue {
 interface CartProviderProps {
     children: ReactNode;
     codCli: number | undefined;
+    sessionId?: number | null;
 }
 
-export function CartProvider({ children, codCli }: CartProviderProps) {
+export function CartProvider({ children, codCli, sessionId }: CartProviderProps) {
     const [cart, setCart] = useState<CartItem[]>([]);
 
     const refreshCart = useCallback(async () => {
         if (!codCli) { setCart([]); return; }
         try {
-            const data = await cartService.getCart();
+            const data = await cartService.getCart(sessionId);
             setCart(data);
         } catch (e) { console.error('Errore fetch carrello', e); }
-    }, [codCli]);
+    }, [codCli, sessionId]);
 
     const addItem = useCallback(async (codArt: string, qta: number, extra?: { source?: string; ai_confidence?: number | null; related_message_id?: number | null }) => {
-        const res = await cartService.addItem(codArt, qta, extra);
+        const res = await cartService.addItem(codArt, qta, { ...extra, sessionId });
         // Dopo l'add facciamo refresh perché non abbiamo i dati completi
         // del prodotto (des_art, linea, famiglia, etc.) per creare un item locale
         await refreshCart();
         return res;
-    }, [refreshCart]);
+    }, [refreshCart, sessionId]);
 
     // ---------- Optimistic: removeItem ----------
     const removeItem = useCallback(async (id: number) => {
@@ -66,7 +54,7 @@ export function CartProvider({ children, codCli }: CartProviderProps) {
         setCart(prev => prev.filter(item => item.id !== id));
         // Sincronizza col server in background
         try {
-            const res = await cartService.removeItem(id);
+            const res = await cartService.removeItem(id, sessionId);
             if (!res.ok) {
                 console.error('Errore server removeItem, rollback');
                 setCart(snapshot);
@@ -75,7 +63,7 @@ export function CartProvider({ children, codCli }: CartProviderProps) {
             console.error('Errore removeItem, rollback', e);
             setCart(snapshot);
         }
-    }, [cart]);
+    }, [cart, sessionId]);
 
     // ---------- Optimistic: updateQty ----------
     const updateQty = useCallback(async (id: number, qta: number, source = 'customer') => {
@@ -91,7 +79,7 @@ export function CartProvider({ children, codCli }: CartProviderProps) {
         ));
         // Sincronizza col server in background
         try {
-            const res = await cartService.updateQty(id, qta, source);
+            const res = await cartService.updateQty(id, qta, source, sessionId);
             if (!res.ok) {
                 console.error('Errore server updateQty, rollback');
                 setCart(snapshot);
@@ -100,7 +88,7 @@ export function CartProvider({ children, codCli }: CartProviderProps) {
             console.error('Errore updateQty, rollback', e);
             setCart(snapshot);
         }
-    }, [cart, removeItem]);
+    }, [cart, removeItem, sessionId]);
 
     const clearCart = useCallback(() => setCart([]), []);
 

@@ -1,11 +1,3 @@
-// ============================================================
-// components/chat/FeedbackButtons.tsx — Pulsanti feedback su risposta AI
-//
-// Coppia di pulsanti pollice su/giù che compaiono sotto ogni
-// messaggio AI. Invoca feedbackService per registrare il
-// feedback e gestisce gli stati attivo/inattivo con animazione.
-// ============================================================
-
 "use client";
 
 interface FeedbackButtonsProps {

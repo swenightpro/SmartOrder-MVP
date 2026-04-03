@@ -1,11 +1,3 @@
-// ============================================================
-// components/ui/Badge.tsx — Badge generico con varianti colore
-//
-// Componente atomico per etichette colorate: AI, confidence,
-// conteggio, default. Include helper confidenceVariant() per
-// calcolare automaticamente il colore in base alla percentuale.
-// ============================================================
-
 interface BadgeProps {
     children: React.ReactNode;
     variant?: 'default' | 'ai' | 'confidence-high' | 'confidence-mid' | 'confidence-low' | 'count';

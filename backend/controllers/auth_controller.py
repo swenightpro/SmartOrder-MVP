@@ -1,22 +1,18 @@
-# ===========================================================================
-# controllers/auth_controller.py — Controller autenticazione (Layer 1)
-#
-# Endpoint: POST /auth/login, POST /auth/logout, GET /auth/me,
-#           POST /auth/change-password
-# ===========================================================================
-
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
-from domain.schemas import LoginRequest, ChangePasswordRequest
+from domain.schemas import LoginRequest, ChangePasswordRequest, RegisterRequest
 from services.auth_service import AuthService
 from config import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Cached instances (overridden by main.py dependency_overrides)
+_auth_svc: AuthService | None = None
 
 def _get_auth_service() -> AuthService:
     """Factory per DI — iniettata in main.py."""
+    if _auth_svc:
+        return _auth_svc
     raise NotImplementedError("Override in main.py")
-
 
 def _get_current_user(request: Request) -> dict:
     """Middleware di autenticazione: estrae e valida il JWT dal cookie."""
@@ -25,9 +21,7 @@ def _get_current_user(request: Request) -> dict:
     if not token:
         raise HTTPException(status_code=401, detail="Non autenticato")
 
-    from adapters.postgres_adapter import PostgresAdapter
-    repo = PostgresAdapter()
-    auth = AuthService(repo)
+    auth = _get_auth_service()
     payload = auth.verify_jwt(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Token non valido o scaduto")
@@ -37,7 +31,6 @@ def _get_current_user(request: Request) -> dict:
         "cod_cli": payload.get("cod_cli", 0),
         "role": payload.get("role", "customer"),
     }
-
 
 @router.post("/login")
 def login(body: LoginRequest, response: Response,
@@ -68,13 +61,17 @@ def login(body: LoginRequest, response: Response,
         },
     }
 
-
 @router.post("/logout")
 def logout(response: Response):
     settings = get_settings()
-    response.delete_cookie(key=settings.cookie_name, path="/")
+    response.delete_cookie(
+        key=settings.cookie_name,
+        path="/",
+        secure=False,  # deve coincidere con set_cookie
+        httponly=True,
+        samesite="lax",
+    )
     return {"success": True}
-
 
 @router.get("/me")
 def me(user: dict = Depends(_get_current_user),
@@ -83,7 +80,6 @@ def me(user: dict = Depends(_get_current_user),
     if not profile:
         raise HTTPException(status_code=404, detail="Utente non trovato")
     return {"user": profile}
-
 
 @router.post("/change-password")
 def change_password(body: ChangePasswordRequest,
@@ -96,3 +92,13 @@ def change_password(body: ChangePasswordRequest,
         status = 401 if "attuale" in error_msg else 400
         raise HTTPException(status_code=status, detail=error_msg)
     return {"success": True}
+
+@router.post("/register")
+def register(body: RegisterRequest,
+             auth_service: AuthService = Depends(_get_auth_service)):
+    ok, error_msg = auth_service.register(
+        body.email, body.password, body.role, body.cod_cli
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail=error_msg)
+    return {"success": True, "message": "Utente creato con successo"}

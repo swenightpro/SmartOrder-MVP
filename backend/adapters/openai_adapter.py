@@ -1,15 +1,8 @@
-# ===========================================================================
-# adapters/openai_adapter.py — Infrastructure Adapter per OpenAI API
-#
-# Implementa IAIClient, isolando il codice di dominio dall'SDK OpenAI.
-# ===========================================================================
-
 from typing import IO, Optional
 from openai import OpenAI
 
 from ports.i_ai_client import IAIClient
 from config import get_settings
-
 
 class OpenAIAdapter(IAIClient):
     """Adapter concreto verso le API OpenAI (GPT-4o, Whisper)."""

@@ -1,10 +1,3 @@
-// ============================================================
-// components/ui/QuantityStepper.tsx — Stepper numerico riutilizzabile
-//
-// Componente atomico con pulsanti +/− e campo numerico editabile.
-// Usato sia in ProductCard (aggiunta) che in CartItemRow (modifica).
-// ============================================================
-
 "use client";
 
 interface QuantityStepperProps {

@@ -1,11 +1,3 @@
-// ============================================================
-// components/ui/Modal.tsx — Wrapper modale riutilizzabile
-//
-// Componente atomico: overlay scuro con backdrop-blur, click
-// esterno e tasto Escape per chiudere. Accetta children generici
-// per renderizzare qualsiasi contenuto al centro dello schermo.
-// ============================================================
-
 "use client";
 import { useEffect } from 'react';
 

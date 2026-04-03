@@ -1,9 +1,3 @@
-# ===========================================================================
-# controllers/feedback_controller.py — Controller feedback AI (Layer 1)
-#
-# Endpoint: POST /feedback
-# ===========================================================================
-
 from fastapi import APIRouter, Depends, HTTPException
 from domain.schemas import FeedbackRequest
 from controllers.auth_controller import _get_current_user
@@ -11,11 +5,9 @@ from services.feedback_service import FeedbackService
 
 router = APIRouter(tags=["feedback"])
 
-
 def _get_feedback_service() -> FeedbackService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
-
 
 @router.post("/feedback")
 def handle_feedback(body: FeedbackRequest,

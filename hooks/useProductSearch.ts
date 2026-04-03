@@ -1,13 +1,4 @@
-// ============================================================
-// hooks/useProductSearch.ts — Hook reattivo: ricerca prodotti
-//
-// Pattern Observer: reagisce ai cambiamenti del searchTerm con
-// debounce configurabile, invocando productService.search().
-// Restituisce stato di ricerca, risultati e setter.
-// Consumato da ProductSearch per disaccoppiare logica e UI.
-// ============================================================
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { productService } from '@/services';
 import type { Product } from '@/types';
 
@@ -16,21 +7,30 @@ export function useProductSearch(debounceMs = 300) {
     const [results, setResults] = useState<Product[]>([]);
     const [isSearching, setIsSearching] = useState(false);
 
-    useEffect(() => {
-        if (searchTerm.trim().length < 2) {
+    const doSearch = useCallback(async (term: string) => {
+        const trimmed = term.trim();
+        if (trimmed.length < 2) {
             setResults([]);
+            setIsSearching(false);
             return;
         }
 
         setIsSearching(true);
-        const timer = setTimeout(async () => {
-            const data = await productService.search(searchTerm);
-            setResults(data);
-            setIsSearching(false);
-        }, debounceMs);
+        const data = await productService.search(trimmed);
+        setResults(data);
+        setIsSearching(false);
+    }, []);
 
+    useEffect(() => {
+        let timer: ReturnType<typeof setTimeout>;
+        if (searchTerm.trim().length < 2) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: clear results immediately on trim < 2
+            doSearch(searchTerm);
+        } else {
+            timer = setTimeout(() => doSearch(searchTerm), debounceMs);
+        }
         return () => clearTimeout(timer);
-    }, [searchTerm, debounceMs]);
+    }, [searchTerm, debounceMs, doSearch]);
 
     return { searchTerm, setSearchTerm, results, setResults, isSearching };
 }

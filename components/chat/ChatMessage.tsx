@@ -1,11 +1,3 @@
-// ============================================================
-// components/chat/ChatMessage.tsx — Bolla singolo messaggio in chat
-//
-// Renderizza un messaggio utente o AI con formattazione markdown
-// (grassetto, liste). Esporta anche le utility formatChatMessage
-// e extractBoldProducts usate da ChatPanel per il parsing.
-// ============================================================
-
 import FeedbackButtons from './FeedbackButtons';
 
 /** Formattazione markdown semplice per messaggi chat */
