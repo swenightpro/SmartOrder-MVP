@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/immutability, react-hooks/refs */
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { getApiBaseUrl } from '@/lib/apiClient';
 
 export type SSEEventType = 'message' | 'ticket_update' | 'cart_update' | 'connected' | 'image_message';
 
@@ -63,7 +64,7 @@ export function useSSE(url: string | null, options: UseSSEOptions = {}): UseSSER
         }
 
         // Connect directly to FastAPI (bypass Next.js proxy to avoid response buffering)
-        const fullUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${url}`;
+        const fullUrl = `${getApiBaseUrl()}${url}`;
 
         const es = new EventSource(fullUrl, { withCredentials: true });
         esRef.current = es;
