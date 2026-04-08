@@ -7,9 +7,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { path: string[] } }
+    { params }: { params: Promise<{ path: string[] }> }
 ) {
-    const upstreamPath = Array.isArray(params.path) ? params.path.join('/') : '';
+    const resolvedParams = await params;
+    const upstreamPath = Array.isArray(resolvedParams.path) ? resolvedParams.path.join('/') : '';
     const targetUrl = `${backendUrl}/sse/${upstreamPath}${request.nextUrl.search}`;
 
     const upstreamResponse = await fetch(targetUrl, {
