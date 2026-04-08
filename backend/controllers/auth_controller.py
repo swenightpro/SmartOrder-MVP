@@ -50,8 +50,8 @@ def login(body: LoginRequest, response: Response,
         key=settings.cookie_name,
         value=result["token"],
         httponly=True,
-        samesite="lax",
-        secure=False,  # True in produzione con HTTPS
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
         max_age=settings.jwt_expiration_hours * 3600,
         path="/",
     )
@@ -72,9 +72,9 @@ def logout(response: Response):
     response.delete_cookie(
         key=settings.cookie_name,
         path="/",
-        secure=False,  # deve coincidere con set_cookie
+        secure=settings.cookie_secure,
         httponly=True,
-        samesite="lax",
+        samesite=settings.cookie_samesite,
     )
     return {"success": True}
 

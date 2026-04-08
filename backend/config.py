@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     api_host: str = "0.0.0.0"
 
+    # --- Cookie ---
+    cookie_secure: bool = False       # True in produzione (HTTPS)
+    cookie_samesite: str = "lax"      # "none" in produzione (cross-domain)
+
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"  # comma-separated in prod
     cors_origin_regex: str = r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|.*\.up\.railway\.app)$"
