@@ -298,7 +298,6 @@ export default function ChatPanel({ selectedClient, hasOpenTicket = false, ticke
         sessionId,
         pendingCartEdits?.length ? pendingCartEdits : undefined,
       );
-      console.log('[CHAT] API response:', JSON.stringify(data));
       if (data.success) {
         if (data.user_message_id) {
           setMessages(prev => prev.map(m => m.id === userMsg.id ? { ...m, dbId: data.user_message_id } : m));
@@ -532,8 +531,6 @@ export default function ChatPanel({ selectedClient, hasOpenTicket = false, ticke
         reader.readAsDataURL(processedFile);
       });
     } catch { /* non-critical */ }
-    console.log('[IMAGE DEBUG] file type:', processedFile.type, 'size:', processedFile.size, 'first 20 b64 chars:', imageBlobBase64.substring(0, 20));
-
     setIsUploadingImage(true);
     try {
       const result = await chatService.uploadImage(processedFile, sessionId);

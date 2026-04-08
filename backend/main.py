@@ -111,10 +111,10 @@ def _configure_dependency_overrides(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 Backend SmartOrder avviato")
+    logger.info("Backend SmartOrder avviato")
     yield
     close_pool()
-    logger.info("🛑 Backend SmartOrder terminato")
+    logger.info("Backend SmartOrder terminato")
 
 
 # ---------------------------------------------------------------------------
