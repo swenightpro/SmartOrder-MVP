@@ -7,13 +7,6 @@ from dataclasses import dataclass, field
 
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
 
-# Rimuovi eventuali env var di sistema relative alle chiavi API per forzare
-# l'uso esclusivo del file .env locale (evita che chiavi personali di dev
-# (es. da .zshrc, .bashrc) vadano in produzione o interferiscano con i test).
-import os as _os
-for _key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AZURE_OPENAI_KEY"]:
-    _os.environ.pop(_key, None)
-
 
 class Settings(BaseSettings):
     """Configurazione dell'applicazione."""
