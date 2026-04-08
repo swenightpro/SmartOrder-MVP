@@ -165,10 +165,13 @@ app.include_router(ticket_controller.router)
 app.include_router(sse_controller.router)
 
 if __name__ == "__main__":
+    import os
     import uvicorn
+
+    reload_enabled = os.getenv("UVICORN_RELOAD", "false").lower() in ("1", "true", "yes")
     uvicorn.run(
         "main:app",
         host=settings.api_host,
         port=settings.api_port,
-        reload=True,
+        reload=reload_enabled,
     )
