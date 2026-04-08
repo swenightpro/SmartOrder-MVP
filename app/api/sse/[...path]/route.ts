@@ -5,13 +5,10 @@ const backendUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type RouteContext = {
-    params: {
-        path: string[];
-    };
-};
-
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export async function GET(
+    request: NextRequest,
+    { params }: { params: { path: string[] } }
+) {
     const upstreamPath = Array.isArray(params.path) ? params.path.join('/') : '';
     const targetUrl = `${backendUrl}/sse/${upstreamPath}${request.nextUrl.search}`;
 
