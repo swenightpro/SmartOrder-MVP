@@ -19,7 +19,6 @@ export default function ClientSelector({ onClientChange, currentClient, isOverla
     const [selected, setSelected] = useState<Client | null>(null);
     const [loading, setLoading] = useState(false);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync controlled input state with prop changes
     useEffect(() => {
         if (currentClient) {
             setSelected(currentClient);

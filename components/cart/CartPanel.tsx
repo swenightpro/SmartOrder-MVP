@@ -1,7 +1,7 @@
 "use client";
 import { useState } from 'react';
 import type { Client, Product } from '@/types';
-import { orderService } from '@/services';
+import { orderService, ticketService } from '@/services';
 import { useCart, useSession } from '@/contexts';
 import ProductSearch from './ProductSearch';
 import ProductCard from './ProductCard';
@@ -15,20 +15,25 @@ interface CartPanelProps {
   currentClient: Client | null;
   onClose?: () => void;
   onOrderSuccess: () => void;
+  hasOpenTicket?: boolean;
+  onTicketChange?: () => void;
   isMobile?: boolean;
 }
 
-export default function CartPanel({ currentClient, onClose, onOrderSuccess, isMobile = false }: CartPanelProps) {
-  const { cart, addItem, removeItem, updateQty, refreshCart } = useCart();
+export default function CartPanel({ currentClient, onClose, onOrderSuccess, hasOpenTicket = false, onTicketChange, isMobile = false }: CartPanelProps) {
+  const { cart, addItem, removeItem, updateQty, refreshCart, hasPendingUpdates } = useCart();
   const { sessionId } = useSession();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [error, setError] = useState('');
   const [blockedItems, setBlockedItems] = useState<Set<number>>(new Set());
+  const [confirmingAssistenza, setConfirmingAssistenza] = useState(false);
+  const [assistenzaLoading, setAssistenzaLoading] = useState(false);
 
   // SSE: real-time cart updates (from operator changes or ticket session)
+  // Skip refresh if there are pending debounced qty updates to avoid overwriting optimistic state
   useSSE(sessionId ? `/sse/${sessionId}` : null, {
       onEvent: (event) => {
-          if (event.type === 'cart_update') {
+          if (event.type === 'cart_update' && !hasPendingUpdates()) {
               refreshCart();
           }
       },
@@ -54,8 +59,8 @@ export default function CartPanel({ currentClient, onClose, onOrderSuccess, isMo
     await removeItem(id);
   };
 
-  const updateCartQty = async (id: number, newQty: number) => {
-    await updateQty(id, newQty);
+  const updateCartQty = (id: number, newQty: number) => {
+    updateQty(id, newQty);
   };
 
   // --- Send order (Facade: orderService) ---
@@ -83,18 +88,75 @@ export default function CartPanel({ currentClient, onClose, onOrderSuccess, isMo
     }
   };
 
+  // --- Assistenza toggle ---
+  const handleAssistenzaAction = async () => {
+    if (!sessionId || assistenzaLoading) return;
+    setAssistenzaLoading(true);
+    try {
+      if (hasOpenTicket) {
+        await ticketService.closeTicketBySession(sessionId);
+      } else {
+        await ticketService.openTicket(sessionId);
+      }
+      onTicketChange?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Errore assistenza');
+    } finally {
+      setAssistenzaLoading(false);
+      setConfirmingAssistenza(false);
+    }
+  };
+
   // --- Shared: Confirm button ---
   const ConfirmButton = () => (
-    <button
-      onClick={handleSendFullOrder}
-      disabled={cart.length === 0}
-      className="w-full h-12 bg-[hsl(234,60%,36%)] text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-[hsl(234,60%,30%)] disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none transition-all active:scale-[0.98] flex justify-center items-center gap-2"
-    >
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-      </svg>
-      CONFERMA E INVIA
-    </button>
+    <div className="flex gap-2 flex-1">
+      {onTicketChange !== undefined && (
+        confirmingAssistenza ? (
+          <div className="flex items-center gap-2 shrink-0 bg-gray-50 border border-gray-200 rounded-2xl px-3 h-12">
+            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
+              {hasOpenTicket ? 'Chiudere l\'assistenza?' : 'Richiedere assistenza?'}
+            </span>
+            <button
+              onClick={handleAssistenzaAction}
+              disabled={assistenzaLoading}
+              className="h-7 px-3 rounded-xl text-xs font-bold bg-[hsl(234,60%,36%)] text-white hover:bg-[hsl(234,60%,30%)] transition-all disabled:opacity-50"
+            >
+              {assistenzaLoading ? '...' : 'Sì'}
+            </button>
+            <button
+              onClick={() => setConfirmingAssistenza(false)}
+              className="h-7 px-3 rounded-xl text-xs font-bold border border-gray-200 text-gray-500 hover:bg-gray-100 transition-all"
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmingAssistenza(true)}
+            className={`h-12 px-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 shrink-0 ${
+              hasOpenTicket
+                ? 'bg-red-50 text-red-600 border-2 border-red-200 hover:bg-red-100'
+                : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            {hasOpenTicket ? 'Chiudi Assistenza' : 'Richiedi Assistenza'}
+          </button>
+        )
+      )}
+      <button
+        onClick={handleSendFullOrder}
+        disabled={cart.length === 0}
+        className="flex-1 h-12 bg-[hsl(234,60%,36%)] text-white rounded-2xl font-bold text-sm shadow-lg hover:bg-[hsl(234,60%,30%)] disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none transition-all active:scale-[0.98] flex justify-center items-center gap-2"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+        </svg>
+        CONFERMA E INVIA
+      </button>
+    </div>
   );
 
   // --- Shared: Cart list ---

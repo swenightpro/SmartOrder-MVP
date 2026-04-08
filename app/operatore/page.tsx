@@ -2,16 +2,17 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { UserProfile } from '@/types';
-import { authService } from '@/services';
-import OperatorLayout from '@/components/layout/OperatorLayout';
+import { authService, orderService } from '@/services';
+import { ToastProvider, useToast } from '@/components/ui';
+import OperatorLayout, { type NavItem } from '@/components/layout/OperatorLayout';
 import TicketDashboard from '@/components/operatore/TicketDashboard';
+import OperatorAnalyticsDashboard from '@/components/operatore/OperatorAnalyticsDashboard';
 import OperatorOrderHistory from '@/components/operatore/OperatorOrderHistory';
 import UserProfilePanel from '@/components/auth/UserProfilePanel';
 
-type NavItem = 'ticket' | 'storico' | 'profilo';
-
-export default function OperatorePage() {
+function OperatoreContent() {
     const router = useRouter();
+    const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [activeNav, setActiveNav] = useState<NavItem>('ticket');
@@ -31,6 +32,25 @@ export default function OperatorePage() {
                 }
                 setProfile(p);
                 setClient({ cod_cli: p.cod_cli, rag_soc: p.rag_soc });
+
+                // Export batch automatico su login
+                const folder = await authService.getExportFolder();
+                if (folder) {
+                    try {
+                        const result = await orderService.exportBatch({}, 50);
+                        if (result.failed_count > 0 || result.errors.length > 0) {
+                            showToast(
+                                `Export: ${result.exported_count} ordini esportati, ${result.failed_count} falliti. Controlla la console.`,
+                                'error'
+                            );
+                        } else if (result.exported_count > 0) {
+                            showToast(`${result.exported_count} ordini esportati automaticamente`, 'success');
+                        }
+                    } catch (e: unknown) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        showToast(`Errore export automatico: ${msg}`, 'error');
+                    }
+                }
             } catch {
                 router.replace('/');
             } finally {
@@ -38,6 +58,7 @@ export default function OperatorePage() {
             }
         };
         checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [router]);
 
     const handleLogout = async () => {
@@ -66,12 +87,21 @@ export default function OperatorePage() {
             profileName={profile.rag_soc}
         >
             {activeNav === 'ticket' && <TicketDashboard />}
+            {activeNav === 'analytics' && <OperatorAnalyticsDashboard />}
             {activeNav === 'storico' && <OperatorOrderHistory />}
             {activeNav === 'profilo' && (
-                <div className="h-full overflow-y-auto custom-scrollbar">
-                    <UserProfilePanel client={client} onLogout={handleLogout} />
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    <UserProfilePanel client={client} onLogout={() => router.replace('/')} hideLogout />
                 </div>
             )}
         </OperatorLayout>
+    );
+}
+
+export default function OperatorePage() {
+    return (
+        <ToastProvider>
+            <OperatoreContent />
+        </ToastProvider>
     );
 }

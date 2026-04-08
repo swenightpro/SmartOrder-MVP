@@ -8,21 +8,20 @@ import { ChatPanel } from "@/components/chat";
 import { CartPanel } from "@/components/cart";
 import { AuthOverlay } from "@/components/auth";
 import { OrderHistory } from "@/components/orders";
-import { TopBar, MobileTabBar, AssistenzaModal } from "@/components/layout";
+import { TopBar, MobileTabBar } from "@/components/layout";
 import { useSSE } from "@/hooks";
 
 // ── Componente interno che consuma i Context ──────────────────
-function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
+function AppContent({ selectedClient, onClientChange }: {
   selectedClient: Client | null;
   onClientChange: (c: Client | null) => void;
-  onSessionIdChange: (id: number | null) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"create" | "history">("create");
   const [refreshKey, setRefreshKey] = useState(0);
   const [showClientSelector, setShowClientSelector] = useState(true);
-  const [mobilePanel, setMobilePanel] = useState<"chat" | "cart" | "history" | "assistenza">("chat");
+  const [mobilePanel, setMobilePanel] = useState<"chat" | "cart" | "history">("chat");
   const [hasOpenTicket, setHasOpenTicket] = useState(false);
-  const [showAssistenza, setShowAssistenza] = useState(false);
+  const [ticketStatus, setTicketStatus] = useState<'aperto' | 'in_lavorazione' | null>(null);
 
   const { cart, refreshCart, clearCart } = useCart();
   const { initSession, showNewSessionModal, cancelNewSession, confirmNewSession, setChatMessages, sessionId } = useSession();
@@ -30,6 +29,7 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
     await confirmNewSession();
     clearCart();
   }, [confirmNewSession, clearCart]);
+
 
   // Carica sessione auth esistente + redirect operatore — eseguito SOLO al mount
   useEffect(() => {
@@ -61,7 +61,6 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
       if (selectedClient) {
         refreshCart();
         const sessionId = await initSession();
-        onSessionIdChange(sessionId);
 
         let historyLoaded = false;
         if (sessionId) {
@@ -86,7 +85,7 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
     };
 
     setupSessionAndChat();
-  }, [selectedClient, refreshCart, initSession, setChatMessages, clearCart, onSessionIdChange]);
+  }, [selectedClient, refreshCart, initSession, setChatMessages, clearCart]);
 
   const handleOrderSuccess = useCallback(async () => {
     setRefreshKey((k) => k + 1);
@@ -107,21 +106,28 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
     if (c) setShowClientSelector(false);
   };
 
-  const handleMobileTabChange = (panel: 'chat' | 'cart' | 'history' | 'assistenza') => {
-    if (panel === 'assistenza') {
-      setShowAssistenza(true);
-      return;
-    }
+  const handleMobileTabChange = (panel: 'chat' | 'cart' | 'history') => {
     setMobilePanel(panel);
     setActiveTab(panel === 'history' ? 'history' : 'create');
   };
 
   // Check ticket on session change
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setHasOpenTicket(false);
+      setTicketStatus(null);
+      return;
+    }
     ticketService.getTicketBySession(sessionId)
-      .then(t => setHasOpenTicket(!!t))
-      .catch(() => setHasOpenTicket(false));
+      .then(t => {
+        setHasOpenTicket(!!t);
+        if (t) {
+          setTicketStatus(t.status === 'chiuso' ? null : (t.status as 'aperto' | 'in_lavorazione'));
+        } else {
+          setTicketStatus(null);
+        }
+      })
+      .catch(() => { setHasOpenTicket(false); setTicketStatus(null); });
   }, [sessionId]);
 
   // SSE: real-time ticket status updates
@@ -131,8 +137,10 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
         const update = event.data as { status: string };
         if (update.status === 'chiuso') {
           setHasOpenTicket(false);
+          setTicketStatus(null);
         } else {
           setHasOpenTicket(true);
+          setTicketStatus(update.status as 'aperto' | 'in_lavorazione');
         }
       }
     },
@@ -188,29 +196,16 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
         </div>
       )}
 
-      <TopBar onProfileClick={() => setShowClientSelector(true)} onAssistenzaClick={() => setShowAssistenza(true)} hasOpenTicket={hasOpenTicket} />
+      <TopBar onProfileClick={() => setShowClientSelector(true)} />
 
       {selectedClient && (
-        <MobileTabBar activePanel={mobilePanel} cartCount={cart.length} onTabChange={handleMobileTabChange} hasOpenTicket={hasOpenTicket} />
-      )}
-
-      {/* Assistenza modal */}
-      {showAssistenza && (
-        <AssistenzaModal
-          sessionId={sessionId}
-          onClose={() => setShowAssistenza(false)}
-          onTicketChange={() => {
-            if (sessionId) {
-              ticketService.getTicketBySession(sessionId).then(t => setHasOpenTicket(!!t)).catch(() => setHasOpenTicket(false));
-            }
-          }}
-        />
+        <MobileTabBar activePanel={mobilePanel} cartCount={cart.length} onTabChange={handleMobileTabChange} />
       )}
 
       {/* DESKTOP LAYOUT */}
       <div className="hidden md:flex flex-1 overflow-hidden gap-3 p-3">
         <div className="w-[45%] bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <ChatPanel selectedClient={selectedClient} hasOpenTicket={hasOpenTicket} />
+          <ChatPanel selectedClient={selectedClient} hasOpenTicket={hasOpenTicket} ticketStatus={ticketStatus} />
         </div>
 
         <div className="w-[55%] flex flex-col gap-3">
@@ -228,7 +223,7 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
           {activeTab === "create" ? (
             selectedClient ? (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex-1 overflow-hidden">
-                <CartPanel currentClient={selectedClient} onOrderSuccess={handleOrderSuccess} />
+                <CartPanel currentClient={selectedClient} onOrderSuccess={handleOrderSuccess} hasOpenTicket={hasOpenTicket} onTicketChange={() => { if (sessionId) { ticketService.getTicketBySession(sessionId).then(t => { setHasOpenTicket(!!t); if (t) setTicketStatus(t.status === 'chiuso' ? null : t.status as 'aperto' | 'in_lavorazione'); else setTicketStatus(null); }).catch(() => { setHasOpenTicket(false); setTicketStatus(null); }); } }} />
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-300 italic text-sm">Seleziona un cliente per iniziare</div>
@@ -249,13 +244,13 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
       <div className="md:hidden flex-1 flex flex-col overflow-hidden">
         {mobilePanel === "chat" && (
           <div className="flex-1 bg-white overflow-hidden">
-            <ChatPanel selectedClient={selectedClient} hasOpenTicket={hasOpenTicket} />
+            <ChatPanel selectedClient={selectedClient} hasOpenTicket={hasOpenTicket} ticketStatus={ticketStatus} />
           </div>
         )}
         {mobilePanel === "cart" && (
           <div className="flex-1 bg-white overflow-hidden">
             {selectedClient ? (
-              <CartPanel currentClient={selectedClient} onOrderSuccess={handleOrderSuccess} isMobile={true} />
+              <CartPanel currentClient={selectedClient} onOrderSuccess={handleOrderSuccess} hasOpenTicket={hasOpenTicket} onTicketChange={() => { if (sessionId) { ticketService.getTicketBySession(sessionId).then(t => { setHasOpenTicket(!!t); if (t) setTicketStatus(t.status === 'chiuso' ? null : t.status as 'aperto' | 'in_lavorazione'); else setTicketStatus(null); }).catch(() => { setHasOpenTicket(false); setTicketStatus(null); }); } }} isMobile={true} />
             ) : (
               <div className="h-full flex items-center justify-center text-gray-300 italic text-xs px-4 text-center">Seleziona un cliente per iniziare</div>
             )}
@@ -278,17 +273,15 @@ function AppContent({ selectedClient, onClientChange, onSessionIdChange }: {
 // ── Componente root — inietta i provider ──────────────────────
 export default function Home() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [sessionId, setSessionId] = useState<number | null>(null);
 
   return (
-    <CartProvider codCli={selectedClient?.cod_cli} sessionId={sessionId}>
-      <SessionProvider clientName={selectedClient?.rag_soc} onSessionReset={() => {
-        // Svuota il carrello nella UI quando viene confermata una nuova sessione
-        // clearCart è accessibile qui perché siamo dentro <CartProvider>
-      }}>
-
-        <AppContent selectedClient={selectedClient} onClientChange={setSelectedClient} onSessionIdChange={setSessionId} />
-      </SessionProvider>
-    </CartProvider>
+    <SessionProvider clientName={selectedClient?.rag_soc} onSessionReset={() => {
+      // Svuota il carrello nella UI quando viene confermata una nuova sessione
+      // clearCart è accessibile qui perché siamo dentro <CartProvider>
+    }}>
+      <CartProvider codCli={selectedClient?.cod_cli}>
+        <AppContent selectedClient={selectedClient} onClientChange={setSelectedClient} />
+      </CartProvider>
+    </SessionProvider>
   );
 }

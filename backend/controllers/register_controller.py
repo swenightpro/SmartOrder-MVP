@@ -4,9 +4,11 @@ from services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["register"])
 
+
 def _get_auth_service() -> AuthService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
+
 
 @router.post("/register")
 def register(body: RegisterRequest,

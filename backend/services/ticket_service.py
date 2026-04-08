@@ -3,6 +3,7 @@ from typing import Optional
 from ports.i_ticket_repository import ITicketRepository
 from services.sse_broadcaster import OPERATOR_CHANNEL
 
+
 class TicketService:
     """Servizio applicativo per la gestione dei ticket di assistenza."""
 
@@ -46,6 +47,11 @@ class TicketService:
 
         return tickets
 
+    def get_platform_usage_overview(self, days: int = 14) -> dict:
+        """Ritorna metriche aggregate della piattaforma per il pannello operatore."""
+        safe_days = max(7, min(int(days), 90))
+        return self._ticket_repo.get_platform_usage_overview(safe_days)
+
     def get_ticket_by_id(self, ticket_id: int) -> Optional[dict]:
         """Ritorna il ticket con dati arricchiti (rag_soc, messaggi)."""
         ticket = self._ticket_repo.get_ticket_by_id(ticket_id)
@@ -60,7 +66,7 @@ class TicketService:
 
             # Recupera messaggi e carrello della sessione
             if ticket.get("session_id"):
-                messages = self._db.get_messages(ticket["session_id"])
+                messages = self._db.get_messages_with_feedback(ticket["session_id"])
                 ticket["messages"] = messages
                 cart_items = self._db.get_cart_by_session(ticket["session_id"])
                 ticket["cart_items"] = cart_items
@@ -107,33 +113,23 @@ class TicketService:
             })
 
     async def close_ticket(self, ticket_id: int, closed_by: str = "operator") -> None:
-        """Chiude il ticket, riabilita l'AI e aggiunge messaggio di sistema."""
+        """Chiude il ticket e riabilita l'AI."""
         ticket = self._ticket_repo.get_ticket_by_id(ticket_id)
         self._ticket_repo.close_ticket(ticket_id)
 
-        if self._db is not None and ticket:
+        if ticket:
             session_id = ticket.get("session_id")
-            if session_id:
-                if closed_by == "operator":
-                    content = "Il ticket è stato chiuso dall'operatore. L'assistente AI è di nuovo disponibile per questa sessione."
-                else:
-                    content = "Il ticket è stato chiuso dal cliente. L'assistente AI è di nuovo disponibile per questa sessione."
-                self._db.save_message(
-                    session_id=session_id,
-                    sender="system",
-                    content=content,
-                )
-                if self._broadcaster:
-                    await self._broadcaster.emit(session_id, "ticket_update", {
-                        "ticket_id": ticket_id,
-                        "status": "chiuso",
-                        "session_id": session_id,
-                    })
-                    await self._broadcaster.emit(OPERATOR_CHANNEL, "ticket_update", {
-                        "ticket_id": ticket_id,
-                        "status": "chiuso",
-                        "session_id": session_id,
-                    })
+            if session_id and self._broadcaster:
+                await self._broadcaster.emit(session_id, "ticket_update", {
+                    "ticket_id": ticket_id,
+                    "status": "chiuso",
+                    "session_id": session_id,
+                })
+                await self._broadcaster.emit(OPERATOR_CHANNEL, "ticket_update", {
+                    "ticket_id": ticket_id,
+                    "status": "chiuso",
+                    "session_id": session_id,
+                })
 
     async def send_chat_message(self, ticket_id: int, content: str) -> dict:
         """Invia un messaggio come operatore nella chat della sessione."""

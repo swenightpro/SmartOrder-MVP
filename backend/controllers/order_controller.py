@@ -6,9 +6,11 @@ from services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
+
 def _get_order_service() -> OrderService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
+
 
 def _resolve_target_cod_cli(user: dict, requested_cod_cli: Optional[int]) -> int:
     role = str(user.get("role") or "customer")
@@ -26,6 +28,7 @@ def _resolve_target_cod_cli(user: dict, requested_cod_cli: Optional[int]) -> int
         raise HTTPException(status_code=403, detail="cod_cli non autorizzato")
 
     return user_cod_cli
+
 
 @router.post("/create")
 def create_order(body: CreateOrderRequest,
@@ -48,6 +51,7 @@ def create_order(body: CreateOrderRequest,
 
     return {"order_id": order_id}
 
+
 @router.get("/list")
 def list_orders(page: int = 0,
                 cod_cli: Optional[int] = None,
@@ -59,12 +63,15 @@ def list_orders(page: int = 0,
                 user: dict = Depends(_get_current_user),
                 order_service: OrderService = Depends(_get_order_service)):
     target_cod_cli = _resolve_target_cod_cli(user, cod_cli)
+    no_filters = not search and not date_from and not date_to
     orders = order_service.get_orders_by_client(
-        target_cod_cli, page, 15, search, sort_by, sort_dir, date_from, date_to)
+        target_cod_cli, page, 50 if no_filters else 15, search, sort_by, sort_dir, date_from, date_to)
     return orders
+
 
 @router.get("/all")
 def list_all_orders(page: int = 0,
+                   limit: int = 50,
                    search: str = "",
                    sort_by: str = "data_ord",
                    sort_dir: str = "desc",
@@ -72,14 +79,43 @@ def list_all_orders(page: int = 0,
                    date_to: Optional[str] = None,
                    search_cod_cli: str = "",
                    search_rag_soc: str = "",
+                   esportato: Optional[bool] = None,
                    user: dict = Depends(_get_current_user),
                    order_service: OrderService = Depends(_get_order_service)):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Solo operatori")
+    clamped_limit = min(max(limit, 1), 100)
     orders = order_service.get_all_orders(
-        page, 15, search, sort_by, sort_dir, date_from, date_to,
-        search_cod_cli, search_rag_soc)
+        page, clamped_limit, search, sort_by, sort_dir, date_from, date_to,
+        search_cod_cli, search_rag_soc, esportato)
     return orders
+
+
+@router.post("/export-batch")
+def export_batch_orders(date_from: Optional[str] = None,
+                       date_to: Optional[str] = None,
+                       search_cod_cli: str = "",
+                       search_rag_soc: str = "",
+                       limit: int = 50,
+                       user: dict = Depends(_get_current_user),
+                       order_service: OrderService = Depends(_get_order_service)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Solo operatori")
+
+    try:
+        result = order_service.export_batch(
+            user_id=user["userId"],
+            date_from=date_from,
+            date_to=date_to,
+            search_cod_cli=search_cod_cli,
+            search_rag_soc=search_rag_soc,
+            limit=limit,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return result
+
 
 @router.get("/detail")
 def order_detail(id: int,
@@ -91,3 +127,23 @@ def order_detail(id: int,
     if not detail:
         raise HTTPException(status_code=404, detail="Ordine non trovato")
     return detail
+
+
+@router.post("/export")
+def export_order(id: int,
+                format: str = "json",
+                user: dict = Depends(_get_current_user),
+                order_service: OrderService = Depends(_get_order_service)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Solo operatori")
+
+    if format not in ("json", "csv"):
+        raise HTTPException(status_code=400, detail="Formato non supportato: usare json o csv")
+
+    try:
+        result = order_service.export_order(id, user["userId"], format)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=404, detail="Ordine non trovato")
+    return result

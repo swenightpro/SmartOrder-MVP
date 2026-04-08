@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+
 class ISessionManager(ABC):
     """Contratto di accesso a sessioni, messaggi e carrelli."""
 

@@ -65,6 +65,12 @@ export default function TicketDashboard() {
         fetchTickets();
     }, [fetchTickets]);
 
+    // Polling: refresh every 15s to update waiting times and catch missed SSE events
+    useEffect(() => {
+        const interval = setInterval(() => fetchTickets(false), 15_000);
+        return () => clearInterval(interval);
+    }, [fetchTickets]);
+
     // SSE: refresh ticket list on any ticket change
     useSSE('/sse/tickets', {
         onEvent: () => {

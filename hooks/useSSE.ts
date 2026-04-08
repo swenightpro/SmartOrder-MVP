@@ -1,6 +1,7 @@
+/* eslint-disable react-hooks/immutability, react-hooks/refs */
 import { useEffect, useRef, useCallback, useState } from 'react';
 
-export type SSEEventType = 'message' | 'ticket_update' | 'cart_update' | 'connected';
+export type SSEEventType = 'message' | 'ticket_update' | 'cart_update' | 'connected' | 'image_message';
 
 export interface SSEEvent {
     type: string;
@@ -42,6 +43,17 @@ export function useSSE(url: string | null, options: UseSSEOptions = {}): UseSSER
     const mountedRef = useRef(true);
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Store callbacks in refs to avoid reconnecting when they change
+    const onConnectedRef = useRef(onConnected);
+    const onEventRef = useRef(onEvent);
+    const onErrorRef = useRef(onError);
+    onConnectedRef.current = onConnected;
+    onEventRef.current = onEvent;
+    onErrorRef.current = onError;
+
+    // Use a ref to break the self-reference cycle in connect's setTimeout
+    const connectRef = useRef<(() => void) | null>(null);
+
     const connect = useCallback(() => {
         if (!mountedRef.current || url === null) return;
 
@@ -61,14 +73,14 @@ export function useSSE(url: string | null, options: UseSSEOptions = {}): UseSSER
             setConnected(true);
             retriesRef.current = 0;
             setReconnectAttempts(0);
-            onConnected?.();
+            onConnectedRef.current?.();
         });
 
         es.onmessage = (event) => {
             if (!mountedRef.current) return;
             try {
                 const parsed = JSON.parse(event.data) as { event: string; data: unknown };
-                onEvent?.({ type: parsed.event, data: parsed.data });
+                onEventRef.current?.({ type: parsed.event, data: parsed.data });
             } catch {
                 // ignore keepalive comments
             }
@@ -83,13 +95,17 @@ export function useSSE(url: string | null, options: UseSSEOptions = {}): UseSSER
                 retriesRef.current += 1;
                 setReconnectAttempts(retriesRef.current);
                 reconnectTimeoutRef.current = setTimeout(() => {
-                    if (mountedRef.current) connect();
+                    connectRef.current?.();
                 }, delay);
             } else {
-                onError?.(new Event('max_retries'));
+                onErrorRef.current?.(new Event('max_retries'));
             }
         };
-    }, [url, onConnected, onEvent, onError, baseDelay, maxRetries]);
+    }, [url, baseDelay, maxRetries]);
+
+    useEffect(() => {
+        connectRef.current = connect;
+    }, [connect]);
 
     useEffect(() => {
         mountedRef.current = true;

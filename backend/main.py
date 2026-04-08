@@ -19,6 +19,7 @@ from services.client_service import ClientService
 from services.ticket_service import TicketService
 from services.sse_broadcaster import get_broadcaster
 
+# --- Controller imports ---
 from controllers import (
     auth_controller,
     conversation_controller,
@@ -32,8 +33,13 @@ from controllers import (
     sse_controller,
 )
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Dependency Injection wiring
+# ---------------------------------------------------------------------------
 
 # Singleton delle implementazioni concrete
 _db = PostgresAdapter()
@@ -53,14 +59,18 @@ auth_controller._auth_svc = _auth_service
 ticket_controller._ticket_svc = _ticket_service
 sse_controller._sse_auth_svc = _auth_service
 
+
 def _provide_auth_service() -> AuthService:
     return _auth_service
+
 
 def _provide_conversation_service() -> ConversationService:
     return _conversation_service
 
+
 def _provide_cart_service() -> CartService:
     return _cart_service
+
 
 def _provide_order_service() -> OrderService:
     return _order_service
@@ -77,8 +87,10 @@ def _provide_client_service() -> ClientService:
 def _provide_ticket_service() -> TicketService:
     return _ticket_service
 
+
 def _provide_db() -> PostgresAdapter:
     return _db
+
 
 def _configure_dependency_overrides(app: FastAPI) -> None:
     """Collega le dipendenze astratte dei controller alle implementazioni concrete."""
@@ -92,12 +104,22 @@ def _configure_dependency_overrides(app: FastAPI) -> None:
     app.dependency_overrides[client_controller._get_client_service] = _provide_client_service
     app.dependency_overrides[ticket_controller._get_ticket_service] = _provide_ticket_service
 
+
+# ---------------------------------------------------------------------------
+# App lifecycle
+# ---------------------------------------------------------------------------
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Backend SmartOrder avviato")
     yield
     close_pool()
     logger.info("🛑 Backend SmartOrder terminato")
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
 
 settings = get_settings()
 
@@ -110,6 +132,7 @@ app = FastAPI(
 
 _configure_dependency_overrides(app)
 
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled backend exception on %s", request.url.path)
@@ -118,6 +141,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={"detail": "Errore interno backend"},
     )
 
+# --- CORS ---
 # Permette al frontend (localhost:3000 in dev) di chiamare il backend (localhost:8000)
 app.add_middleware(
     CORSMiddleware,
@@ -128,6 +152,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Registra tutti i router ---
 app.include_router(health_controller.router)
 app.include_router(auth_controller.router)
 app.include_router(conversation_controller.router)
@@ -140,12 +165,10 @@ app.include_router(ticket_controller.router)
 app.include_router(sse_controller.router)
 
 if __name__ == "__main__":
-    import os
     import uvicorn
-    port = int(os.environ.get("PORT", settings.api_port))
     uvicorn.run(
         "main:app",
         host=settings.api_host,
-        port=port,
-        reload=os.environ.get("RAILWAY_ENVIRONMENT") is None,
+        port=settings.api_port,
+        reload=True,
     )

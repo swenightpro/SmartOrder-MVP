@@ -28,7 +28,7 @@ export default function CartItemRow({ item, isBlocked = false, onRemove, onUpdat
     };
 
     return (
-        <div className={`relative p-3.5 border rounded-2xl transition-all animate-slide-up ${isBlocked
+        <div className={`relative p-3.5 border rounded-2xl transition-all ${isBlocked
             ? 'bg-red-50 border-red-300'
             : isDraft
                 ? 'bg-amber-50 border-amber-200'
@@ -90,7 +90,7 @@ export default function CartItemRow({ item, isBlocked = false, onRemove, onUpdat
                                                 onChange={(e) => setEditingQty(Math.max(1, parseInt(e.target.value) || 1))}
                                                 onBlur={() => handleUpdate(editingQty)}
                                                 onKeyDown={(e) => { if (e.key === 'Enter') handleUpdate(editingQty); }}
-                                                className="w-12 h-7 text-center border-2 border-[hsl(234,60%,50%)] rounded-lg text-sm font-bold text-[hsl(234,60%,36%)] bg-white outline-none animate-scale-in"
+                                                className="w-12 h-7 text-center border-2 border-[hsl(234,60%,50%)] rounded-lg text-sm font-bold text-[hsl(234,60%,36%)] bg-white outline-none"
                                             />
                                         ) : (
                                             <button

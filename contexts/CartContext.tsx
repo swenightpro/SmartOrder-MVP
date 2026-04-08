@@ -1,16 +1,18 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 import type { CartItem } from '@/types';
 import { cartService } from '@/services';
+import { useSession } from './SessionContext';
 
 interface CartContextValue {
     cart: CartItem[];
     refreshCart: () => Promise<void>;
     addItem: (codArt: string, qta: number, extra?: { source?: string; ai_confidence?: number | null; related_message_id?: number | null }) => Promise<Response>;
     removeItem: (id: number) => Promise<void>;
-    updateQty: (id: number, qta: number, source?: string) => Promise<void>;
+    updateQty: (id: number, qta: number, source?: string) => void;
     clearCart: () => void;
+    hasPendingUpdates: () => boolean;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -24,11 +26,13 @@ export function useCart(): CartContextValue {
 interface CartProviderProps {
     children: ReactNode;
     codCli: number | undefined;
-    sessionId?: number | null;
 }
 
-export function CartProvider({ children, codCli, sessionId }: CartProviderProps) {
+export function CartProvider({ children, codCli }: CartProviderProps) {
+    const { sessionId } = useSession();
     const [cart, setCart] = useState<CartItem[]>([]);
+    // Debounce map: itemId → { targetQty, timer }
+    const pendingUpdates = useRef<Map<number, { targetQty: number; timer: ReturnType<typeof setTimeout> }>>(new Map());
 
     const refreshCart = useCallback(async () => {
         if (!codCli) { setCart([]); return; }
@@ -48,52 +52,70 @@ export function CartProvider({ children, codCli, sessionId }: CartProviderProps)
 
     // ---------- Optimistic: removeItem ----------
     const removeItem = useCallback(async (id: number) => {
-        // Salva snapshot per rollback
-        const snapshot = cart;
-        // Rimuovi subito dalla UI
+        // Cancella eventuali update pendenti per questo articolo
+        const pending = pendingUpdates.current.get(id);
+        if (pending) { clearTimeout(pending.timer); pendingUpdates.current.delete(id); }
+        // Rimuovi subito dalla UI (snapshot via functional update per evitare stale closure)
         setCart(prev => prev.filter(item => item.id !== id));
-        // Sincronizza col server in background
         try {
             const res = await cartService.removeItem(id, sessionId);
             if (!res.ok) {
-                console.error('Errore server removeItem, rollback');
-                setCart(snapshot);
+                console.error('Errore server removeItem, risincronizzazione dal server');
+                await refreshCart();
             }
         } catch (e) {
-            console.error('Errore removeItem, rollback', e);
-            setCart(snapshot);
+            console.error('Errore removeItem', e);
+            await refreshCart();
         }
-    }, [cart, sessionId]);
+    }, [sessionId, refreshCart]);
 
-    // ---------- Optimistic: updateQty ----------
-    const updateQty = useCallback(async (id: number, qta: number, source = 'customer') => {
+    // ---------- Debounced optimistic: updateQty ----------
+    // UI aggiornata immediatamente; API call ritardata di 600ms per
+    // accorpare click rapidi sullo stesso articolo in una sola chiamata.
+    const updateQty = useCallback((id: number, qta: number, source = 'customer') => {
         // Se la quantità va a 0 o meno, tratta come rimozione
         if (qta < 1) {
+            // Cancella eventuale pending per questo id
+            const existing = pendingUpdates.current.get(id);
+            if (existing) { clearTimeout(existing.timer); pendingUpdates.current.delete(id); }
             return removeItem(id);
         }
-        // Salva snapshot per rollback
-        const snapshot = cart;
-        // Aggiorna subito la UI
+        // Aggiorna subito la UI (optimistic)
         setCart(prev => prev.map(item =>
             item.id === id ? { ...item, qta, last_updated_by: source } : item
         ));
-        // Sincronizza col server in background
-        try {
-            const res = await cartService.updateQty(id, qta, source, sessionId);
-            if (!res.ok) {
-                console.error('Errore server updateQty, rollback');
-                setCart(snapshot);
+        // Cancella il timer precedente per lo stesso articolo
+        const existing = pendingUpdates.current.get(id);
+        if (existing) clearTimeout(existing.timer);
+        // Schedula la chiamata API dopo 600ms di silenzio
+        const timer = setTimeout(async () => {
+            pendingUpdates.current.delete(id);
+            try {
+                const res = await cartService.updateQty(id, qta, source, sessionId);
+                if (!res.ok) {
+                    console.error('Errore server updateQty, risincronizzazione dal server');
+                    await refreshCart();
+                } else {
+                    // Risincronizza solo se non ci sono altri update in attesa
+                    // (es. aggiornamenti dell'operatore arrivati via SSE nel frattempo)
+                    if (pendingUpdates.current.size === 0) {
+                        await refreshCart();
+                    }
+                }
+            } catch (e) {
+                console.error('Errore updateQty', e);
+                await refreshCart();
             }
-        } catch (e) {
-            console.error('Errore updateQty, rollback', e);
-            setCart(snapshot);
-        }
-    }, [cart, removeItem, sessionId]);
+        }, 600);
+        pendingUpdates.current.set(id, { targetQty: qta, timer });
+    }, [removeItem, sessionId, refreshCart]);
 
     const clearCart = useCallback(() => setCart([]), []);
 
+    const hasPendingUpdates = useCallback(() => pendingUpdates.current.size > 0, []);
+
     return (
-        <CartContext.Provider value={{ cart, refreshCart, addItem, removeItem, updateQty, clearCart }}>
+        <CartContext.Provider value={{ cart, refreshCart, addItem, removeItem, updateQty, clearCart, hasPendingUpdates }}>
             {children}
         </CartContext.Provider>
     );

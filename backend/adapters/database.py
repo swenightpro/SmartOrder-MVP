@@ -1,27 +1,30 @@
+from __future__ import annotations
 import psycopg2
 from psycopg2 import pool, extras
+from typing import Optional
 from config import get_settings
 
-_pool: pool.SimpleConnectionPool | None = None
+_pool: Optional[pool.SimpleConnectionPool] = None
+
 
 def get_pool() -> pool.SimpleConnectionPool:
     """Ritorna il pool di connessioni, creandolo se necessario."""
     global _pool
     if _pool is None or _pool.closed:
         s = get_settings()
-        db = s.db_config
         _pool = pool.SimpleConnectionPool(
             minconn=2,
             maxconn=10,
-            host=db["host"],
-            port=db["port"],
-            user=db["user"],
-            password=db["password"],
-            database=db["database"],
+            host=s.db_host,
+            port=s.db_port,
+            user=s.db_user,
+            password=s.db_password,
+            database=s.db_name,
         )
     return _pool
 
-def execute_query(query: str, params: tuple | list | None = None,
+
+def execute_query(query: str, params: Optional[tuple | list] = None,
                   fetch: bool = True) -> list[dict]:
     """Esegue una query e ritorna i risultati come lista di dizionari.
 
@@ -51,10 +54,12 @@ def execute_query(query: str, params: tuple | list | None = None,
         except Exception:
             pass
 
-def execute_query_one(query: str, params: tuple | list | None = None) -> dict | None:
+
+def execute_query_one(query: str, params: Optional[tuple | list] = None) -> Optional[dict]:
     """Esegue una query e ritorna il primo risultato o None."""
     results = execute_query(query, params, fetch=True)
     return results[0] if results else None
+
 
 def close_pool():
     """Chiude il pool di connessioni."""

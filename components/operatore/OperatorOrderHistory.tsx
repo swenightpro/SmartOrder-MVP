@@ -4,6 +4,7 @@ import type { OrderSummary, OrderFilters } from '@/types';
 import { orderService } from '@/services';
 import OrderDetailModal from '@/components/orders/OrderDetailModal';
 
+const PAGE_SIZE = 50;
 type SortCol = 'data_ord' | 'id' | 'cod_cli' | 'rag_soc' | 'item_count';
 
 function formatDate(iso: string): string {
@@ -48,8 +49,7 @@ function SortHeader({ col, label, sortable, currentSort, currentDir, onSort }: {
 export default function OperatorOrderHistory() {
     const [orders, setOrders] = useState<OrderSummary[]>([]);
     const [loading, setLoading] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [, setPage] = useState(0);
+    const [page, setPage] = useState(0);
     const [hasMore, setHasMore] = useState(true);
     const [selectedOrder, setSelectedOrder] = useState<{ id: number; cod_cli: number } | null>(null);
 
@@ -63,25 +63,24 @@ export default function OperatorOrderHistory() {
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
     const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
-    const observerRef = useRef<HTMLDivElement | null>(null);
 
     const currentFilters = (): OrderFilters => ({
         search, sortBy, sortDir, dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined, searchCodCli, searchRagSoc,
+        limit: PAGE_SIZE,
     });
 
     const fetchOrders = useCallback(async (pageNum: number, f: OrderFilters) => {
         try {
-            if (pageNum === 0) setLoading(true);
-            else setLoadingMore(true);
-            const data = await orderService.listAll(f);
-            if (data.length < 15) setHasMore(false);
-            setOrders(prev => pageNum === 0 ? data : [...prev, ...data]);
+            setLoading(true);
+            const offset = pageNum * PAGE_SIZE;
+            const data = await orderService.listAll({ ...f, limit: PAGE_SIZE, offset });
+            setOrders(data);
+            setHasMore(data.length >= PAGE_SIZE);
         } catch {
             setOrders([]);
         } finally {
             setLoading(false);
-            setLoadingMore(false);
         }
     }, []);
 
@@ -128,19 +127,11 @@ export default function OperatorOrderHistory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => {
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
-                setPage(p => {
-                    const next = p + 1;
-                    fetchOrders(next, currentFilters());
-                    return next;
-                });
-            }
-        }, { threshold: 0.1 });
-        if (observerRef.current) observer.observe(observerRef.current);
-        return () => observer.disconnect();
-    }, [hasMore, loading, loadingMore, fetchOrders]);
+    const goToPage = (p: number) => {
+        if (p < 0 || p === page) return;
+        setPage(p);
+        fetchOrders(p, currentFilters());
+    };
 
     return (
         <>
@@ -148,6 +139,7 @@ export default function OperatorOrderHistory() {
                 <OrderDetailModal
                     orderId={selectedOrder.id}
                     codCli={selectedOrder.cod_cli}
+                    isAdmin={true}
                     onClose={() => setSelectedOrder(null)}
                 />
             )}
@@ -158,9 +150,6 @@ export default function OperatorOrderHistory() {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <h2 className="text-sm font-extrabold text-gray-900">Storico Ordini</h2>
-                            <span className="text-[10px] bg-[hsl(234,60%,95%)] text-[hsl(234,60%,36%)] px-2 py-0.5 rounded-full font-bold">
-                                {orders.length}{!hasMore ? '+' : ''}
-                            </span>
                         </div>
                         <button
                             onClick={() => fetchOrders(0, currentFilters())}
@@ -259,6 +248,7 @@ export default function OperatorOrderHistory() {
                                     <SortHeader col="rag_soc" label="Cliente" sortable currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
                                     <SortHeader col="data_ord" label="Data" sortable currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
                                     <SortHeader col="item_count" label="Art." sortable currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-400">Stato</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -287,6 +277,18 @@ export default function OperatorOrderHistory() {
                                                 {order.item_count}
                                             </span>
                                         </td>
+                                        <td className="px-4 py-3">
+                                            {order.esportato ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                                                        <polyline points="20 6 9 17 4 12" />
+                                                    </svg>
+                                                    Esportato
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] text-gray-300">—</span>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -294,12 +296,35 @@ export default function OperatorOrderHistory() {
                     )}
                 </div>
 
-                {/* Infinite scroll sentinel */}
-                {hasMore && !loading && (
-                    <div ref={observerRef} className="shrink-0 py-2 flex justify-center">
-                        {loadingMore && (
-                            <div className="w-5 h-5 border-2 border-gray-200 border-t-[hsl(234,60%,36%)] rounded-full animate-spin" />
-                        )}
+                {/* Pagination */}
+                {!loading && orders.length > 0 && (
+                    <div className="shrink-0 px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-[11px] text-gray-400 font-medium">
+                            Pagina {page + 1}
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => goToPage(0)}
+                                disabled={page === 0}
+                                className="px-2 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                &laquo;
+                            </button>
+                            <button
+                                onClick={() => goToPage(page - 1)}
+                                disabled={page === 0}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                &lsaquo; Prec
+                            </button>
+                            <button
+                                onClick={() => goToPage(page + 1)}
+                                disabled={!hasMore}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Succ &rsaquo;
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

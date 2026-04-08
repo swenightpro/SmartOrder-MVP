@@ -5,9 +5,11 @@ from services.feedback_service import FeedbackService
 
 router = APIRouter(tags=["feedback"])
 
+
 def _get_feedback_service() -> FeedbackService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
+
 
 @router.post("/feedback")
 def handle_feedback(body: FeedbackRequest,

@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 
 from domain.schemas import (
     CreateTicketRequest,
     TicketResponse,
     TicketListResponse,
+    TicketAnalyticsResponse,
     SendMessageRequest,
     CloseTicketRequest,
 )
@@ -13,7 +15,8 @@ from controllers.auth_controller import _get_current_user
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 # Cached instance (overridden by main.py dependency_overrides)
-_ticket_svc: TicketService | None = None
+_ticket_svc: Optional[TicketService] = None
+
 
 def _get_ticket_service() -> TicketService:
     """Factory per DI — iniettata in main.py."""
@@ -21,15 +24,18 @@ def _get_ticket_service() -> TicketService:
         return _ticket_svc
     raise NotImplementedError("TicketService not wired in main.py")
 
+
 def _require_operator(user: dict) -> None:
     """Solleva 403 se l'utente non è un operatore."""
     if user.get("role") not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Accesso riservato agli operatori")
 
+
 def _require_customer(user: dict) -> None:
     """Solleva 403 se l'utente non è un cliente (customer o admin)."""
     if user.get("role") not in ("customer", "admin", "operator"):
         raise HTTPException(status_code=403, detail="Accesso non consentito")
+
 
 @router.get("", response_model=TicketListResponse)
 def list_open_tickets(
@@ -40,6 +46,7 @@ def list_open_tickets(
     _require_operator(user)
     tickets = ticket_svc.get_open_tickets()
     return {"tickets": tickets}
+
 
 @router.post("", response_model=TicketResponse)
 def create_ticket(
@@ -52,6 +59,7 @@ def create_ticket(
 
     ticket = ticket_svc.create_ticket(body.session_id, user["cod_cli"])
     return {"ticket": ticket}
+
 
 @router.get("/session/{session_id}", response_model=TicketResponse)
 def get_ticket_by_session(
@@ -69,6 +77,19 @@ def get_ticket_by_session(
 
     return {"ticket": ticket}
 
+
+@router.get("/analytics/overview", response_model=TicketAnalyticsResponse)
+def get_analytics_overview(
+    days: int = Query(default=14, ge=7, le=90),
+    user: dict = Depends(_get_current_user),
+    ticket_svc: TicketService = Depends(_get_ticket_service),
+):
+    """Metriche aggregate in sola lettura per dashboard operatore."""
+    _require_operator(user)
+    overview = ticket_svc.get_platform_usage_overview(days=days)
+    return {"overview": overview}
+
+
 @router.get("/{ticket_id}", response_model=TicketResponse)
 def get_ticket(
     ticket_id: int,
@@ -84,6 +105,7 @@ def get_ticket(
 
     return {"ticket": ticket}
 
+
 @router.patch("/{ticket_id}/lock")
 async def lock_ticket(
     ticket_id: int,
@@ -98,6 +120,7 @@ async def lock_ticket(
         raise HTTPException(status_code=409, detail="Ticket gia in lavorazione o gia chiuso")
 
     return {"success": True}
+
 
 @router.post("/{ticket_id}/message")
 async def send_ticket_message(
@@ -115,6 +138,7 @@ async def send_ticket_message(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.patch("/{ticket_id}/unlock")
 async def unlock_ticket(
     ticket_id: int,
@@ -127,10 +151,11 @@ async def unlock_ticket(
     await ticket_svc.unlock_ticket(ticket_id)
     return {"success": True}
 
+
 @router.patch("/{ticket_id}/close")
 async def close_ticket(
     ticket_id: int,
-    body: CloseTicketRequest | None = None,
+    body: Optional[CloseTicketRequest] = None,
     user: dict = Depends(_get_current_user),
     ticket_svc: TicketService = Depends(_get_ticket_service),
 ):
@@ -153,10 +178,11 @@ async def close_ticket(
     await ticket_svc.close_ticket(ticket_id, closed_by="customer")
     return {"success": True}
 
+
 @router.patch("/session/{session_id}/close")
 async def close_ticket_by_session(
     session_id: int,
-    body: CloseTicketRequest | None = None,
+    body: Optional[CloseTicketRequest] = None,
     user: dict = Depends(_get_current_user),
     ticket_svc: TicketService = Depends(_get_ticket_service),
 ):
@@ -171,6 +197,7 @@ async def close_ticket_by_session(
     closed_by = body.closed_by if body else "customer"
     await ticket_svc.close_ticket_by_session(session_id, closed_by=closed_by, cod_cli=user.get("cod_cli"))
     return {"success": True}
+
 
 @router.post("/session/{session_id}/message")
 async def send_customer_message(

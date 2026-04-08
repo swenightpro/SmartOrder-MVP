@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode, type Dispatch, type SetStateAction } from 'react';
 import type { Message } from '@/types';
 import { sessionService, cartService } from '@/services';
 import { useSSE } from '@/hooks';
@@ -36,13 +36,17 @@ export function SessionProvider({ children, clientName, onSessionReset }: Sessio
     const [showNewSessionModal, setShowNewSessionModal] = useState(false);
 
     // SSE: real-time messages for this session
+    // Only handle operator/system messages here — user and AI messages
+    // are already added by ChatPanel from API responses (optimistic UI).
+    // Image messages are also handled by ChatPanel.processImageFile, so no need
+    // to handle image_message events here.
     useSSE(sessionId ? `/sse/${sessionId}` : null, {
         onEvent: (event) => {
             if (event.type === 'message') {
                 const msg = event.data as { id: number; sender: string; content: string };
-                // Only add if not already present (by DB id)
+                if (msg.sender === 'user' || msg.sender === 'ai' || msg.sender === 'system') return;
                 setChatMessages(prev => {
-                    if (prev.some(m => m.id === String(msg.id))) return prev;
+                    if (prev.some(m => m.id === String(msg.id) || m.dbId === msg.id)) return prev;
                     const role: 'user' | 'assistant' = msg.sender === 'user' ? 'user' : 'assistant';
                     return [...prev, { id: String(msg.id), role, content: msg.content }];
                 });

@@ -1,9 +1,9 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { OperatorTicketDetail, CartItem, Message } from '@/types';
+import type { OperatorTicketDetail, CartItem, FeedbackReadOnly } from '@/types';
 import { ticketService, cartService, orderService, productService } from '@/services';
 import { ConfidenceRing } from '@/components/ui';
-import { formatChatMessage } from '@/components/chat/ChatMessage';
+import { formatChatMessage, ImageMessageBubble } from '@/components/chat/ChatMessage';
 import type { Product } from '@/types';
 import { useSSE } from '@/hooks/useSSE';
 
@@ -17,6 +17,9 @@ interface ChatMessageUI {
     dbId?: number;
     role: 'user' | 'assistant' | 'system';
     content: string;
+    imageData?: string;
+    ocrText?: string;
+    feedbacks?: FeedbackReadOnly[];
 }
 
 export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSubentroModalProps) {
@@ -35,6 +38,7 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
     const [searching, setSearching] = useState(false);
     const chatRef = useRef<HTMLDivElement>(null);
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingQtyUpdates = useRef<Map<number, { targetQty: number; timer: ReturnType<typeof setTimeout> }>>(new Map());
 
     const refreshCartItems = useCallback(async () => {
         try {
@@ -58,11 +62,16 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
                 if (!mounted) return;
                 setDetail(data);
                 setCartItems(data.cart_items || []);
-                const msgs: ChatMessageUI[] = (data.messages || []).map((m: { id: number; sender: string; content: string }) => ({
+                const msgs: ChatMessageUI[] = (data.messages || []).map((m: { id: number; sender: string; content: string; image_data?: string; ocr_text?: string }) => ({
                     id: String(m.id),
                     dbId: m.id,
                     role: m.sender === 'user' ? 'user' : m.sender === 'system' ? 'system' : 'assistant',
                     content: m.content,
+                    imageData: m.image_data,
+                    ocrText: m.ocr_text,
+                    feedbacks: Array.isArray((m as { feedbacks?: FeedbackReadOnly[] }).feedbacks)
+                        ? (m as { feedbacks?: FeedbackReadOnly[] }).feedbacks
+                        : [],
                 }));
                 setMessages(msgs);
             } catch (e) {
@@ -78,15 +87,36 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
     }, [ticketId]);
 
     // SSE: real-time updates for messages and cart
+    // Skip operator messages — we add them optimistically in handleSendMessage
     useSSE(detail?.session_id ? `/sse/${detail.session_id}` : null, {
         onEvent: (event) => {
             if (event.type === 'message') {
                 const msg = event.data as { id: number; sender: string; content: string };
+                if (msg.sender === 'operator') return;
                 setMessages(prev => {
                     const prevIds = new Set(prev.map(m => m.dbId ?? m.id));
                     if (prevIds.has(msg.id)) return prev;
                     const role = msg.sender === 'user' ? 'user' : msg.sender === 'system' ? 'system' : 'assistant';
                     return [...prev, { id: String(msg.id), dbId: msg.id, role, content: msg.content }];
+                });
+            } else if (event.type === 'image_message') {
+                const img = event.data as {
+                    id: number;
+                    image_data: string;
+                    ocr_text?: string;
+                    response_type?: string;
+                };
+                setMessages(prev => {
+                    const prevIds = new Set(prev.map(m => m.dbId ?? m.id));
+                    if (prevIds.has(img.id)) return prev;
+                    return [...prev, {
+                        id: String(img.id),
+                        dbId: img.id,
+                        role: 'user' as const,
+                        content: '',
+                        imageData: img.image_data,
+                        ocrText: img.ocr_text,
+                    }];
                 });
             } else if (event.type === 'ticket_update') {
                 const update = event.data as { status: 'aperto' | 'in_lavorazione' | 'chiuso' };
@@ -113,41 +143,34 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
         }
     }, [messages]);
 
-    const handleClose = () => onUnlocked();
-
-    const handleUnlock = useCallback(async () => {
+    const handleClose = useCallback(async () => {
         if (actionLoading) return;
         setActionLoading(true);
         setActionError('');
         try {
             await ticketService.unlockTicket(ticketId);
-            onUnlocked();
-        } catch (e) {
-            setActionError(e instanceof Error ? e.message : 'Errore rilascio');
-        } finally {
-            setActionLoading(false);
-        }
+        } catch { /* ignore unlock errors on close */ }
+        setActionLoading(false);
+        onUnlocked();
     }, [actionLoading, ticketId, onUnlocked]);
 
     useEffect(() => {
-        const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleUnlock(); };
+        const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
-    }, [handleUnlock]);
+    }, [handleClose]);
 
     const handleSendMessage = async () => {
         const content = chatInput.trim();
         if (!content || sendingMessage) return;
         setSendingMessage(true);
         setChatInput('');
+        const localId = 'local-' + Date.now();
+        setMessages(prev => [...prev, { id: localId, role: 'assistant', content }]);
         try {
             await ticketService.sendChatMessage(ticketId, content);
-            setMessages(prev => [...prev, {
-                id: 'local-' + Date.now(),
-                role: 'assistant',
-                content,
-            }]);
         } catch (e) {
+            setMessages(prev => prev.filter(m => m.id !== localId));
             setActionError(e instanceof Error ? e.message : 'Errore invio messaggio');
         } finally {
             setSendingMessage(false);
@@ -202,15 +225,27 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
         }
     };
 
-    const handleUpdateQty = async (id: number, newQty: number) => {
-        if (newQty < 1) return handleRemoveItem(id);
-        const snapshot = cartItems;
-        setCartItems(prev => prev.map(i => i.id === id ? { ...i, qta: newQty } : i));
-        try {
-            await cartService.updateQty(id, newQty, 'operator', detail?.session_id);
-        } catch {
-            setCartItems(snapshot);
+    const handleUpdateQty = (id: number, newQty: number) => {
+        if (newQty < 1) {
+            const existing = pendingQtyUpdates.current.get(id);
+            if (existing) { clearTimeout(existing.timer); pendingQtyUpdates.current.delete(id); }
+            return handleRemoveItem(id);
         }
+        // Aggiorna subito la UI (optimistic)
+        setCartItems(prev => prev.map(i => i.id === id ? { ...i, qta: newQty } : i));
+        // Cancella il timer precedente per lo stesso articolo
+        const existing = pendingQtyUpdates.current.get(id);
+        if (existing) clearTimeout(existing.timer);
+        // Schedula la chiamata API dopo 600ms di silenzio
+        const timer = setTimeout(async () => {
+            pendingQtyUpdates.current.delete(id);
+            try {
+                await cartService.updateQty(id, newQty, 'operator', detail?.session_id);
+            } catch {
+                await refreshCartItems();
+            }
+        }, 600);
+        pendingQtyUpdates.current.set(id, { targetQty: newQty, timer });
     };
 
     const handleAddProduct = async (product: Product) => {
@@ -259,11 +294,32 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
         );
     };
 
-    const systemMsgStyle = (role: string) => {
-        if (role === 'system') {
-            return 'bg-[hsl(210,40%,96%)] border border-[hsl(210,30%,88%)] text-[hsl(210,40%,40%)] italic';
-        }
-        return '';
+    const renderFeedbacks = (feedbacks: FeedbackReadOnly[] | undefined) => {
+        if (!feedbacks || feedbacks.length === 0) return null;
+        return (
+            <div className="mt-1.5 space-y-1">
+                {feedbacks.map((fb) => (
+                    <div
+                        key={fb.id}
+                        className={`px-2 py-1 rounded-lg border text-[10px] leading-snug ${
+                            fb.is_positive
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-rose-50 border-rose-200 text-rose-700'
+                        }`}
+                    >
+                        <p className="font-bold">
+                            Feedback cliente: {fb.is_positive ? 'Positivo' : 'Negativo'}
+                        </p>
+                        {fb.reason_category && (
+                            <p>Motivo: {fb.reason_category}</p>
+                        )}
+                        {fb.comment && (
+                            <p className="italic">"{fb.comment}"</p>
+                        )}
+                    </div>
+                ))}
+            </div>
+        );
     };
 
     return (
@@ -338,31 +394,45 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
                                     </div>
                                 ) : (
                                     messages.map((msg) => (
-                                        <div
-                                            key={msg.id}
-                                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                                        >
-                                            <div
-                                                className={`max-w-[88%] px-3 py-2 text-[12px] leading-relaxed shadow-sm rounded-xl ${
-                                                    msg.role === 'user'
-                                                        ? 'bg-gradient-to-br from-[hsl(234,62%,30%)] to-[hsl(234,55%,40%)] text-white rounded-br-sm'
-                                                        : msg.role === 'system'
-                                                        ? 'bg-[hsl(210,40%,96%)] border border-[hsl(210,30%,88%)] text-[hsl(210,40%,40%)] text-[11px] italic rounded-bl-sm text-center max-w-full'
-                                                        : 'bg-white text-gray-700 border border-gray-100 rounded-bl-sm'
-                                                }`}
-                                            >
-                                                {msg.role === 'system' ? (
-                                                    msg.content
-                                                ) : msg.role === 'user' ? (
-                                                    msg.content
-                                                ) : (
-                                                    <span
-                                                        className="break-words [&_strong]:font-semibold"
-                                                        dangerouslySetInnerHTML={{ __html: formatChatMessage(msg.content) }}
-                                                    />
-                                                )}
+                                        msg.imageData ? (
+                                            <div key={msg.id}>
+                                                <ImageMessageBubble
+                                                    imageData={msg.imageData}
+                                                    ocrText={msg.ocrText}
+                                                    isOperator={true}
+                                                />
+                                                {renderFeedbacks(msg.feedbacks)}
                                             </div>
-                                        </div>
+                                        ) : (
+                                            <div
+                                                key={msg.id}
+                                                className={`flex ${msg.role === 'assistant' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}`}
+                                            >
+                                                <div className="max-w-[88%]">
+                                                    <div
+                                                        className={`px-3 py-2 text-[12px] leading-relaxed shadow-sm rounded-xl ${
+                                                            msg.role === 'assistant'
+                                                                ? 'bg-gradient-to-br from-[hsl(234,62%,30%)] to-[hsl(234,55%,40%)] text-white rounded-br-sm'
+                                                                : msg.role === 'system'
+                                                                ? 'bg-[hsl(210,40%,96%)] border border-[hsl(210,30%,88%)] text-[hsl(210,40%,40%)] text-[11px] italic rounded-bl-sm text-center max-w-full'
+                                                                : 'bg-white text-gray-700 border border-gray-100 rounded-bl-sm'
+                                                        }`}
+                                                    >
+                                                        {msg.role === 'system' ? (
+                                                            msg.content
+                                                        ) : msg.role === 'assistant' ? (
+                                                            <span
+                                                                className="break-words [&_strong]:font-semibold"
+                                                                dangerouslySetInnerHTML={{ __html: formatChatMessage(msg.content) }}
+                                                            />
+                                                        ) : (
+                                                            msg.content
+                                                        )}
+                                                    </div>
+                                                    {msg.role !== 'system' && renderFeedbacks(msg.feedbacks)}
+                                                </div>
+                                            </div>
+                                        )
                                     ))
                                 )}
                             </div>
@@ -449,17 +519,16 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
                                     </div>
                                 ) : (
                                     <div className="space-y-2.5">
-                                        {cartItems.map((item, idx) => {
+                                        {cartItems.map((item) => {
                                             const isDraft = !item.cod_art;
                                             return (
                                                 <div
                                                     key={item.id}
-                                                    className={`relative p-3.5 border rounded-2xl transition-all animate-slide-up ${
+                                                    className={`relative p-3.5 border rounded-2xl transition-all ${
                                                         isDraft
                                                             ? 'bg-amber-50 border-amber-200'
                                                             : 'bg-white border-gray-100 hover:border-[hsl(234,60%,80%)] hover:shadow-md'
                                                     }`}
-                                                    style={{ animationDelay: `${idx * 40}ms` }}
                                                 >
                                                     <div className="flex items-start justify-between gap-2">
                                                         <div className="flex-1 min-w-0">
@@ -564,13 +633,6 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
                             ⚠️ {actionError}
                         </div>
                     )}
-                    <button
-                        onClick={handleUnlock}
-                        disabled={actionLoading}
-                        className="px-5 py-2.5 rounded-xl text-sm font-bold border-2 border-gray-200 text-gray-500 hover:bg-gray-50 transition-all disabled:opacity-50"
-                    >
-                        Rilascia
-                    </button>
                     <button
                         onClick={handleCloseTicket}
                         disabled={actionLoading}

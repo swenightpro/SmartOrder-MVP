@@ -1,7 +1,7 @@
 "use client";
 import TopBar from './TopBar';
 
-type NavItem = 'ticket' | 'storico' | 'profilo';
+export type NavItem = 'ticket' | 'analytics' | 'storico' | 'profilo';
 
 interface OperatorLayoutProps {
     activeNav: NavItem;
@@ -22,6 +22,15 @@ const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
         ),
     },
     {
+        id: 'analytics',
+        label: 'Analytics',
+        icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" /><path d="M7 14l4-4 3 3 5-6" />
+            </svg>
+        ),
+    },
+    {
         id: 'storico',
         label: 'Storico Ordini',
         icon: (
@@ -35,8 +44,7 @@ const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
         label: 'Profilo',
         icon: (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
             </svg>
         ),
     },
@@ -46,7 +54,7 @@ export default function OperatorLayout({ activeNav, onNavChange, onLogout, child
     return (
         <div className="h-screen flex flex-col overflow-hidden">
             {/* TopBar */}
-            <TopBar onProfileClick={() => onNavChange('profilo')} />
+            <TopBar onProfileClick={() => {}} />
 
             {/* Desktop: sidebar + main content */}
             <div className="hidden md:flex flex-1 overflow-hidden">

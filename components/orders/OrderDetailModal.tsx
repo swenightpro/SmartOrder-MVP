@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
-import type { OrderDetail } from '@/types';
+import type { OrderDetail, FeedbackReadOnly } from '@/types';
 import { orderService } from '@/services';
 import { formatChatMessage } from '@/components/chat/ChatMessage';
 import { SectionHeader, ConfidenceRing } from '@/components/ui';
@@ -8,13 +8,17 @@ import { SectionHeader, ConfidenceRing } from '@/components/ui';
 interface OrderDetailModalProps {
     orderId: number;
     codCli: number;
+    isAdmin?: boolean;
     onClose: () => void;
 }
 
-export default function OrderDetailModal({ orderId, codCli, onClose }: OrderDetailModalProps) {
+export default function OrderDetailModal({ orderId, codCli, isAdmin = false, onClose }: OrderDetailModalProps) {
     const [detail, setDetail] = useState<OrderDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [exportLoading, setExportLoading] = useState(false);
+    const [exportSuccess, setExportSuccess] = useState('');
+    const [exportError, setExportError] = useState('');
     const chatRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -30,6 +34,7 @@ export default function OrderDetailModal({ orderId, codCli, onClose }: OrderDeta
 
         return () => { mounted = false; };
     }, [orderId, codCli]);
+
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -62,7 +67,45 @@ export default function OrderDetailModal({ orderId, codCli, onClose }: OrderDeta
         setTimeout(() => target.classList.remove('highlight-pulse'), 2200);
     };
 
+    const handleExport = async (fmt: 'json' | 'csv') => {
+        setExportLoading(true);
+        setExportError('');
+        setExportSuccess('');
+        try {
+            const result = await orderService.exportOrder(orderId, fmt);
+            setExportSuccess(`Salvato: ${result.filename}`);
+        } catch (e) {
+            setExportError(e instanceof Error ? e.message : 'Errore esportazione');
+        } finally {
+            setExportLoading(false);
+        }
+    };
+
     const hasChat = detail && detail.messages.length > 0;
+
+    const renderFeedbacks = (feedbacks: FeedbackReadOnly[] | undefined) => {
+        if (!isAdmin || !feedbacks || feedbacks.length === 0) return null;
+        return (
+            <div className="mt-1.5 space-y-1">
+                {feedbacks.map((fb) => (
+                    <div
+                        key={fb.id}
+                        className={`px-2 py-1 rounded-lg border text-[10px] leading-snug ${
+                            fb.is_positive
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-rose-50 border-rose-200 text-rose-700'
+                        }`}
+                    >
+                        <p className="font-bold">
+                            Feedback cliente: {fb.is_positive ? 'Positivo' : 'Negativo'}
+                        </p>
+                        {fb.reason_category && <p>Motivo: {fb.reason_category}</p>}
+                        {fb.comment && <p className="italic">"{fb.comment}"</p>}
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
     return (
         <div
@@ -90,12 +133,44 @@ export default function OrderDetailModal({ orderId, codCli, onClose }: OrderDeta
                             </>
                         )}
                     </div>
-                    <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* Export — solo admin */}
+                        {isAdmin && (
+                            <div className="flex items-center gap-1.5">
+                                <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden">
+                                    <button
+                                        onClick={() => handleExport('json')}
+                                        disabled={exportLoading}
+                                        className="px-3 py-1.5 text-[11px] font-bold text-[hsl(234,60%,36%)] hover:bg-[hsl(234,60%,96%)] transition-colors disabled:opacity-50"
+                                    >
+                                        JSON
+                                    </button>
+                                    <div className="w-px bg-gray-200" />
+                                    <button
+                                        onClick={() => handleExport('csv')}
+                                        disabled={exportLoading}
+                                        className="px-3 py-1.5 text-[11px] font-bold text-[hsl(234,60%,36%)] hover:bg-[hsl(234,60%,96%)] transition-colors disabled:opacity-50"
+                                    >
+                                        CSV
+                                    </button>
+                                </div>
+                                {exportLoading && <div className="w-4 h-4 border-2 border-gray-200 border-t-[hsl(234,60%,36%)] rounded-full animate-spin" />}
+                            </div>
+                        )}
+                        <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
+                {/* Export feedback */}
+                {(exportSuccess || exportError) && (
+                    <div className="shrink-0 px-6 py-2 bg-emerald-50 border-b border-emerald-100">
+                        {exportSuccess && <p className="text-xs font-semibold text-emerald-600">{exportSuccess}</p>}
+                        {exportError && <p className="text-xs font-semibold text-red-500">{exportError}</p>}
+                    </div>
+                )}
 
                 {/* Body */}
                 <div className="flex-1 overflow-hidden flex">
@@ -133,15 +208,18 @@ export default function OrderDetailModal({ orderId, codCli, onClose }: OrderDeta
                                                 data-msg-id={msg.id}
                                                 className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} transition-all duration-300`}
                                             >
-                                                <div className={`msg-bubble max-w-[85%] px-3 py-2 text-[12px] leading-relaxed shadow-sm rounded-xl transition-shadow duration-300 ${msg.sender === 'user'
-                                                    ? 'bg-gradient-to-br from-[hsl(234,62%,30%)] to-[hsl(234,55%,40%)] text-white rounded-br-sm'
-                                                    : 'bg-white text-gray-700 border border-gray-100 rounded-bl-sm'
-                                                    }`}>
-                                                    {msg.sender === 'user' ? (
-                                                        msg.content
-                                                    ) : (
-                                                        <span className="break-words [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: formatChatMessage(msg.content) }} />
-                                                    )}
+                                                <div className="max-w-[85%]">
+                                                    <div className={`msg-bubble px-3 py-2 text-[12px] leading-relaxed shadow-sm rounded-xl transition-shadow duration-300 ${msg.sender === 'user'
+                                                        ? 'bg-gradient-to-br from-[hsl(234,62%,30%)] to-[hsl(234,55%,40%)] text-white rounded-br-sm'
+                                                        : 'bg-white text-gray-700 border border-gray-100 rounded-bl-sm'
+                                                        }`}>
+                                                        {msg.sender === 'user' ? (
+                                                            msg.content
+                                                        ) : (
+                                                            <span className="break-words [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: formatChatMessage(msg.content) }} />
+                                                        )}
+                                                    </div>
+                                                    {renderFeedbacks(msg.feedbacks)}
                                                 </div>
                                             </div>
                                         ))}

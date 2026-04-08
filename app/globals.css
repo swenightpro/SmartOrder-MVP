@@ -76,3 +76,11 @@ body {
 .animate-slide-down {
   animation: slideDown 0.25s ease-out both;
 }
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slideInRight 0.3s ease-out both;
+}

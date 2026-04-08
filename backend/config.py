@@ -1,15 +1,24 @@
+from __future__ import annotations
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import urlparse
+from dataclasses import dataclass, field
 
 
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
 
+# Rimuovi eventuali env var di sistema relative alle chiavi API per forzare
+# l'uso esclusivo del file .env locale (evita che chiavi personali di dev
+# (es. da .zshrc, .bashrc) vadano in produzione o interferiscano con i test).
+import os as _os
+for _key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AZURE_OPENAI_KEY"]:
+    _os.environ.pop(_key, None)
+
+
 class Settings(BaseSettings):
     """Configurazione dell'applicazione."""
 
-    database_url: str = ""
+    # --- Database (PostgreSQL) ---
     db_host: str = "localhost"
     db_port: int = 5432
     db_user: str = "postgres"
@@ -42,16 +51,35 @@ class Settings(BaseSettings):
     # --- Server ---
     api_port: int = 8000
     api_host: str = "0.0.0.0"
-    cookie_secure: bool = False
 
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"  # comma-separated in prod
-    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://.*\.up\.railway\.app$"
+    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
     # --- AI models ---
-    ai_model: str = "gpt-4o"
-    ai_model_mini: str = "gpt-4o-mini"
+    ai_model: str = "gpt-5.4-2026-03-05"
+    ai_model_mini: str = "gpt-5.4-2026-03-05"
     whisper_model: str = "whisper-1"
+    embedding_model: str = "text-embedding-3-small"
+
+    # --- Confidence Scoring ---
+    # Pesi per il calcolo del confidence score (devono sommare a 1.0)
+    signal_weights: dict = field(default_factory=lambda: {
+        # Peso minimo: fallback storico=0.5 non deve abbassare troppo i nuovi articoli.
+        "history_match": 0.04,
+        # Peso contenuto: con embeddings mancanti il fallback a 0.3 non deve penalizzare troppo.
+        "similarity": 0.06,
+        # Segnale forte: quando il match testuale è buono deve trainare lo score.
+        "match_type": 0.35,
+        # Intent utile ma secondario rispetto a match e quantità.
+        "intent_type": 0.10,
+        # Segnale principale: quantità esplicita alza la confidenza nei casi operativi reali.
+        "quantity_explicit": 0.45,
+    })
+    # Soglia UX: confidence sotto questo valore mostra warning all'utente
+    low_confidence_threshold: float = 0.70
+    # Soglia gap per auto-add: top_1 - top_2 >= gap_confidence_threshold → auto-add
+    gap_confidence_threshold: float = 0.15
 
     model_config = {
         "env_file": str(_ENV_FILE),
@@ -63,25 +91,6 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    @property
-    def db_config(self) -> dict:
-        """Ritorna i parametri di connessione DB, parsando DATABASE_URL se presente."""
-        if self.database_url:
-            parsed = urlparse(self.database_url)
-            return {
-                "host": parsed.hostname or self.db_host,
-                "port": parsed.port or self.db_port,
-                "user": parsed.username or self.db_user,
-                "password": parsed.password or self.db_password,
-                "database": parsed.path.lstrip("/") or self.db_name,
-            }
-        return {
-            "host": self.db_host,
-            "port": self.db_port,
-            "user": self.db_user,
-            "password": self.db_password,
-            "database": self.db_name,
-        }
 
 @lru_cache()
 def get_settings() -> Settings:

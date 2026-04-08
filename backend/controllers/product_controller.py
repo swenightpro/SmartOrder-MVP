@@ -4,9 +4,11 @@ from services.product_service import ProductService
 
 router = APIRouter(prefix="/products", tags=["products"])
 
+
 def _get_product_service() -> ProductService:
     """Factory per DI — iniettata in main.py."""
     raise NotImplementedError("Override in main.py")
+
 
 @router.get("/search")
 def search_products(q: str = "",

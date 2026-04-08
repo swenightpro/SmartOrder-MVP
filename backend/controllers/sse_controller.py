@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from config import get_settings
@@ -12,13 +13,15 @@ logger = logging.getLogger(__name__)
 KEEPALIVE_INTERVAL = 30  # secondi
 
 # Cached instances (wired from main.py)
-_sse_auth_svc: AuthService | None = None
+_sse_auth_svc: Optional[AuthService] = None
+
 
 def _get_sse_auth_service() -> AuthService:
     """Factory per DI — iniettata da main.py."""
     if _sse_auth_svc:
         return _sse_auth_svc
     raise NotImplementedError("AuthService not wired in main.py")
+
 
 def _get_current_user(request: Request) -> dict:
     """Middleware di autenticazione SSE: estrae e valida il JWT dal cookie."""
@@ -37,6 +40,7 @@ def _get_current_user(request: Request) -> dict:
         "cod_cli": payload.get("cod_cli", 0),
         "role": payload.get("role", "customer"),
     }
+
 
 def _event_stream(
     request: Request,
@@ -77,6 +81,7 @@ def _event_stream(
         },
     )
 
+
 @router.get("/sse/tickets")
 async def sse_tickets(
     request: Request,
@@ -89,6 +94,7 @@ async def sse_tickets(
     if user.get("role") not in ("admin", "operator"):
         raise HTTPException(status_code=403, detail="Accesso riservato agli operatori")
     return _event_stream(request, OPERATOR_CHANNEL, user)
+
 
 @router.get("/sse/{session_id}")
 async def sse_session(

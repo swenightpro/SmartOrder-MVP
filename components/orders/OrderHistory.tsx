@@ -6,19 +6,6 @@ import OrderDetailModal from './OrderDetailModal';
 import OrderCard from './OrderCard';
 import { EmptyState } from '@/components/ui';
 
-type SortCol = 'data_ord' | 'id' | 'item_count';
-
-function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
-    return (
-        <svg className={`w-3 h-3 ml-1 ${active ? 'opacity-100' : 'opacity-30'}`} viewBox="0 0 12 12" fill="currentColor">
-            {dir === 'asc'
-                ? <path d="M6 3L10 8H2L6 3Z" />
-                : <path d="M6 9L2 4H10L6 9Z" />
-            }
-        </svg>
-    );
-}
-
 export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
     const [orders, setOrders] = useState<OrderSummary[]>([]);
     const [loading, setLoading] = useState(true);
@@ -34,6 +21,7 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
     const [dateTo, setDateTo] = useState('');
 
     const observerRef = useRef<HTMLDivElement | null>(null);
+    const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
     const fetchOrders = useCallback(async (pageNum: number, f: OrderFilters) => {
@@ -42,9 +30,12 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
             else setLoadingMore(true);
 
             const data = await orderService.list(Number(cod_cli), pageNum, f);
+            const noFilters = !f.search && !f.dateFrom && !f.dateTo;
 
-            // Se il backend ci restituisce meno di 15 elementi, significa che siamo arrivati alla fine
-            if (data.length < 15) setHasMore(false);
+            // Se il backend ci restituisce meno del limite, significa che siamo arrivati alla fine.
+            // Limite senza filtri = 50, con filtri = 15.
+            const limit = noFilters ? 50 : 15;
+            if (data.length < limit) setHasMore(false);
 
             setOrders(prev => pageNum === 0 ? data : [...prev, ...data]);
         } catch (e) {
@@ -82,13 +73,6 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
         applyFilters({ ...filters, search: searchInput, dateFrom, dateTo: val });
     };
 
-    const handleSort = (col: SortCol) => {
-        const newDir: 'asc' | 'desc' = filters.sortBy === col && filters.sortDir === 'desc' ? 'asc' : 'desc';
-        const newFilters: OrderFilters = { ...filters, sortBy: col, sortDir: newDir };
-        setFilters(newFilters);
-        applyFilters(newFilters);
-    };
-
     const handleClearFilters = () => {
         setSearchInput('');
         setDateFrom('');
@@ -114,7 +98,7 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
                     return nextPage;
                 });
             }
-        }, { threshold: 0.1 });
+        }, { threshold: 0.1, root: scrollContainerRef.current });
 
         if (observerRef.current) observer.observe(observerRef.current);
         return () => observer.disconnect();
@@ -140,9 +124,6 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
                 <div className="shrink-0 px-4 pt-3 pb-2 space-y-2">
                     <div className="flex items-center justify-between">
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Storico Ordini</label>
-                        <span className="text-[10px] bg-[hsl(234,60%,95%)] text-[hsl(234,60%,36%)] px-2.5 py-0.5 rounded-full font-bold">
-                            {orders.length}{!hasMore ? '+' : ''}
-                        </span>
                     </div>
 
                     {/* Riga ricerca */}
@@ -189,7 +170,7 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
                 </div>
 
                 {/* Lista */}
-                <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
                     {orders.length === 0 ? (
                         <EmptyState icon="list" message={hasActiveFilters ? "Nessun ordine trovato" : "Nessun ordine recente"} />
                     ) : (

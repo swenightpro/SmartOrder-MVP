@@ -3,6 +3,7 @@ import type { Client } from '@/types';
 import LoginForm from './LoginForm';
 import UserProfilePanel from './UserProfilePanel';
 
+
 interface AuthOverlayProps {
   onClientChange: (client: Client | null) => void;
   currentClient?: Client | null;

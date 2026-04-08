@@ -7,6 +7,7 @@ from typing import Optional
 from config import get_settings
 from ports.i_user_repository import IUserRepository
 
+
 class AuthService:
     """Servizio applicativo di autenticazione."""
 
@@ -180,15 +181,28 @@ class AuthService:
             "cod_cli": cod_cli,
             "rag_soc": rag_soc,
             "role": user["role"],
+            "export_folder": user.get("export_folder"),
             "created_at": str(user.get("created_at", "")),
             "updated_at": str(user.get("updated_at", "")),
         }
 
+    def get_export_folder(self, user_id: int) -> Optional[str]:
+        return self._repo.get_export_folder(user_id)
+
+    def set_export_folder(self, user_id: int, path: Optional[str]) -> None:
+        self._repo.set_export_folder(user_id, path)
+
     def change_password(self, user_id: int, current_password: str,
-                        new_password: str) -> tuple[bool, str]:
+                        new_password: str, confirm_new_password: str) -> tuple[bool, str]:
         """Cambio password. Ritorna (successo, messaggio_errore)."""
         if len(new_password) < 6:
             return False, "La nuova password deve avere almeno 6 caratteri"
+
+        if new_password != confirm_new_password:
+            return False, "Le nuove password non coincidono"
+
+        if current_password == new_password:
+            return False, "La nuova password deve essere diversa da quella attuale"
 
         user = self._repo.find_by_id(user_id)
         if not user:

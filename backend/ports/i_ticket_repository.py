@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+
 class ITicketRepository(ABC):
     """Contratto di accesso ai dati ticket di assistenza."""
 
@@ -37,6 +38,11 @@ class ITicketRepository(ABC):
     @abstractmethod
     def close_ticket(self, ticket_id: int) -> None:
         """Imposta lo stato 'chiuso' e rilascia il lock."""
+        ...
+
+    @abstractmethod
+    def get_platform_usage_overview(self, days: int = 14) -> dict:
+        """Ritorna metriche aggregate in sola lettura per dashboard operatore."""
         ...
 
     @abstractmethod

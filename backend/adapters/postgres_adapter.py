@@ -1,5 +1,7 @@
+from __future__ import annotations
 from typing import Optional
 import json
+import base64
 from psycopg2 import errors as pg_errors
 
 from ports.i_user_repository import IUserRepository
@@ -8,12 +10,17 @@ from ports.i_order_repository import IOrderRepository
 from ports.i_ticket_repository import ITicketRepository
 from adapters.database import execute_query, execute_query_one
 
+
+# ---------------------------------------------------------------------------
+# Status di prodotto bloccanti (l'articolo non può essere ordinato)
+# ---------------------------------------------------------------------------
 BLOCKING_STATUSES = [
     "ARTICOLO SOSPESO",
     "SU AUTORIZZAZIONE",
     "DISPONIBILE DAL",
     "NON DISPONIBILE",
 ]
+
 
 class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicketRepository):
     """Implementazione concreta di tutte le porte repository via PostgreSQL."""
@@ -149,13 +156,139 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     # =======================================================================
 
     def get_messages(self, session_id: int) -> list[dict]:
-        return execute_query(
-            """SELECT id, session_id, sender, content, metadata, created_at
+        rows = execute_query(
+            """SELECT id, session_id, sender, content, metadata, created_at,
+                      image_data, ocr_text
                FROM chat_messages
                WHERE session_id = %s
                ORDER BY created_at ASC""",
             (session_id,),
         )
+        result = []
+        for row in rows:
+            r = dict(row)
+            if r.get("image_data"):
+                r["image_data"] = base64.b64encode(r["image_data"]).decode("utf-8")
+            else:
+                r["image_data"] = None
+            result.append(r)
+        return result
+
+    def get_messages_with_feedback(self, session_id: int) -> list[dict]:
+        """Recupera i messaggi di sessione con feedback in sola lettura per UI operatore."""
+        try:
+            rows = execute_query(
+                """SELECT cm.id, cm.session_id, cm.sender, cm.content, cm.metadata, cm.created_at,
+                          cm.image_data, cm.ocr_text,
+                          COALESCE(fb.feedbacks, '[]'::json) AS feedbacks
+                   FROM chat_messages cm
+                   LEFT JOIN LATERAL (
+                       SELECT json_agg(
+                           json_build_object(
+                               'id', latest.id,
+                               'user_id', latest.user_id,
+                               'is_positive', latest.is_positive,
+                               'reason_category', latest.reason_category,
+                               'comment', latest.comment,
+                               'created_at', latest.created_at
+                           )
+                           ORDER BY latest.created_at DESC, latest.id DESC
+                       ) AS feedbacks
+                       FROM (
+                           SELECT DISTINCT ON (mf.user_id)
+                                  mf.id,
+                                  mf.user_id,
+                                  mf.is_positive,
+                                  mf.reason_category,
+                                  mf.comment,
+                                  mf.created_at
+                           FROM message_feedbacks mf
+                           WHERE mf.message_id = cm.id
+                           ORDER BY mf.user_id, mf.created_at DESC, mf.id DESC
+                       ) latest
+                   ) fb ON TRUE
+                   WHERE cm.session_id = %s
+                   ORDER BY cm.created_at ASC""",
+                (session_id,),
+            )
+        except pg_errors.UndefinedTable:
+            # Compatibilita con DB privi della tabella feedback.
+            rows = self.get_messages(session_id)
+            for row in rows:
+                row["feedbacks"] = []
+            return rows
+
+        result = []
+        for row in rows:
+            r = dict(row)
+            if r.get("image_data"):
+                r["image_data"] = base64.b64encode(r["image_data"]).decode("utf-8")
+            else:
+                r["image_data"] = None
+
+            feedbacks = r.get("feedbacks")
+            if isinstance(feedbacks, str):
+                try:
+                    feedbacks = json.loads(feedbacks)
+                except Exception:
+                    feedbacks = []
+            r["feedbacks"] = feedbacks if isinstance(feedbacks, list) else []
+            result.append(r)
+
+        return result
+
+    def get_messages_with_user_feedback(self, session_id: int, user_id: int) -> list[dict]:
+        """Recupera i messaggi con il feedback piu recente dell'utente corrente."""
+        try:
+            rows = execute_query(
+                """SELECT cm.id, cm.session_id, cm.sender, cm.content, cm.metadata, cm.created_at,
+                          cm.image_data, cm.ocr_text,
+                          CASE
+                              WHEN uf.id IS NULL THEN NULL
+                              ELSE json_build_object(
+                                  'id', uf.id,
+                                  'is_positive', uf.is_positive,
+                                  'reason_category', uf.reason_category,
+                                  'comment', uf.comment,
+                                  'created_at', uf.created_at
+                              )
+                          END AS feedback
+                   FROM chat_messages cm
+                   LEFT JOIN LATERAL (
+                       SELECT mf.id, mf.is_positive, mf.reason_category, mf.comment, mf.created_at
+                       FROM message_feedbacks mf
+                       WHERE mf.message_id = cm.id AND mf.user_id = %s
+                       ORDER BY mf.created_at DESC, mf.id DESC
+                       LIMIT 1
+                   ) uf ON TRUE
+                   WHERE cm.session_id = %s
+                   ORDER BY cm.created_at ASC""",
+                (user_id, session_id),
+            )
+        except pg_errors.UndefinedTable:
+            rows = self.get_messages(session_id)
+            for row in rows:
+                row["feedback"] = None
+            return rows
+
+        result = []
+        for row in rows:
+            r = dict(row)
+            if r.get("image_data"):
+                r["image_data"] = base64.b64encode(r["image_data"]).decode("utf-8")
+            else:
+                r["image_data"] = None
+
+            feedback = r.get("feedback")
+            if isinstance(feedback, str):
+                try:
+                    feedback = json.loads(feedback)
+                except Exception:
+                    feedback = None
+            r["feedback"] = feedback if isinstance(feedback, dict) else None
+            result.append(r)
+
+        return result
 
     def save_message(self, session_id: int, sender: str, content: str,
                      metadata: Optional[str] = None) -> int:
@@ -166,6 +299,40 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             (session_id, sender, content, metadata),
         )
         return row["id"]  # type: ignore
+
+    def save_image_message(self, session_id: int, sender: str,
+                           image_base64: str, ocr_text: str,
+                           metadata: Optional[str] = None) -> int:
+        """Save a message with an image and OCR text."""
+        import base64 as b64
+        from psycopg2 import Binary
+        image_bytes = b64.b64decode(image_base64)
+        row = execute_query_one(
+            """INSERT INTO chat_messages
+               (session_id, sender, content, metadata, image_data, ocr_text)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               RETURNING id""",
+            (session_id, sender, "", metadata, Binary(image_bytes), ocr_text),
+        )
+        return row["id"]  # type: ignore
+
+    def get_message_by_id(self, message_id: int) -> Optional[dict]:
+        import base64 as b64
+        row = execute_query_one(
+            """SELECT id, session_id, sender, content, metadata, created_at,
+                      image_data, ocr_text
+               FROM chat_messages
+               WHERE id = %s LIMIT 1""",
+            (message_id,),
+        )
+        if not row:
+            return None
+        r = dict(row)
+        if r.get("image_data"):
+            r["image_data"] = b64.b64encode(r["image_data"]).decode("utf-8")
+        else:
+            r["image_data"] = None
+        return r
 
     # =======================================================================
     # ISessionManager — Carrello
@@ -452,6 +619,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
         )
 
         order_clause = f"ORDER BY o.{sort_col} {sort_dir_san}, o.id {sort_dir_san}"
+        inner_order_clause = f"ORDER BY orders.{sort_col} {sort_dir_san}, orders.id {sort_dir_san}"
 
         return execute_query(
             f"""SELECT
@@ -476,7 +644,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                  SELECT id, data_ord, session_id
                  FROM orders
                  {where_clause}
-                 {order_clause}
+                 {inner_order_clause}
                  LIMIT %s OFFSET %s
                ) o
                {order_clause}""",
@@ -490,7 +658,8 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                        date_from: Optional[str] = None,
                        date_to: Optional[str] = None,
                        search_cod_cli: str = "",
-                       search_rag_soc: str = "") -> list[dict]:
+                       search_rag_soc: str = "",
+                       esportato: Optional[bool] = None) -> list[dict]:
         offset = page * limit
         sort_col, sort_dir_san = self._safe_sort(sort_by, sort_dir, ["data_ord", "id", "cod_cli", "rag_soc", "item_count"])
 
@@ -512,38 +681,76 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
         if search_rag_soc:
             conditions.append("LOWER(an.rag_soc) LIKE LOWER(%s)")
             params.append(f"%{search_rag_soc}%")
+        if esportato is not None:
+            conditions.append("o.esportato = %s")
+            params.append(esportato)
 
         where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
         order_clause = f"ORDER BY o.{sort_col} {sort_dir_san}, o.id {sort_dir_san}"
 
-        return execute_query(
-            f"""SELECT
-                 o.id AS order_id,
-                 o.data_ord,
-                 o.session_id,
-                 o.cod_cli,
-                 an.rag_soc,
-                 (SELECT COUNT(DISTINCT oi.id) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
-                 (SELECT COALESCE(SUM(oi.qta_ordinata), 0) FROM order_items oi WHERE oi.order_id = o.id) AS total_qty,
-                 (SELECT COUNT(*) FROM chat_messages cm WHERE cm.session_id = o.session_id) AS message_count,
-                 (
-                   SELECT json_agg(sub)
-                   FROM (
-                     SELECT oi2.cod_art, a.des_art, oi2.qta_ordinata
-                     FROM order_items oi2
-                     LEFT JOIN anaart a ON a.cod_art = oi2.cod_art
-                     WHERE oi2.order_id = o.id
-                     ORDER BY oi2.id ASC
-                     LIMIT 3
-                   ) sub
-                 ) AS preview_items
-               FROM orders o
-               LEFT JOIN anacli an ON o.cod_cli = an.cod_cli
-               {where_clause}
-               {order_clause}
-               LIMIT %s OFFSET %s""",
-            params + [limit, offset],
-        )
+        # Provo prima con la colonna esportato; se la colonna non esiste ancora,
+        # PostgreSQL lancia un errore che catturiamo e ritentiamo senza.
+        try:
+            return execute_query(
+                f"""SELECT
+                     o.id AS order_id,
+                     o.data_ord,
+                     o.session_id,
+                     o.cod_cli,
+                     an.rag_soc,
+                     o.esportato,
+                     (SELECT COUNT(DISTINCT oi.id) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+                     (SELECT COALESCE(SUM(oi.qta_ordinata), 0) FROM order_items oi WHERE oi.order_id = o.id) AS total_qty,
+                     (SELECT COUNT(*) FROM chat_messages cm WHERE cm.session_id = o.session_id) AS message_count,
+                     (
+                       SELECT json_agg(sub)
+                       FROM (
+                         SELECT oi2.cod_art, a.des_art, oi2.qta_ordinata
+                         FROM order_items oi2
+                         LEFT JOIN anaart a ON a.cod_art = oi2.cod_art
+                         WHERE oi2.order_id = o.id
+                         ORDER BY oi2.id ASC
+                         LIMIT 3
+                       ) sub
+                     ) AS preview_items
+                   FROM orders o
+                   LEFT JOIN anacli an ON o.cod_cli = an.cod_cli
+                   {where_clause}
+                   {order_clause}
+                   LIMIT %s OFFSET %s""",
+                params + [limit, offset],
+            )
+        except Exception:
+            # Colonna esportato assente: ritento senza
+            return execute_query(
+                f"""SELECT
+                     o.id AS order_id,
+                     o.data_ord,
+                     o.session_id,
+                     o.cod_cli,
+                     an.rag_soc,
+                     FALSE AS esportato,
+                     (SELECT COUNT(DISTINCT oi.id) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+                     (SELECT COALESCE(SUM(oi.qta_ordinata), 0) FROM order_items oi WHERE oi.order_id = o.id) AS total_qty,
+                     (SELECT COUNT(*) FROM chat_messages cm WHERE cm.session_id = o.session_id) AS message_count,
+                     (
+                       SELECT json_agg(sub)
+                       FROM (
+                         SELECT oi2.cod_art, a.des_art, oi2.qta_ordinata
+                         FROM order_items oi2
+                         LEFT JOIN anaart a ON a.cod_art = oi2.cod_art
+                         WHERE oi2.order_id = o.id
+                         ORDER BY oi2.id ASC
+                         LIMIT 3
+                       ) sub
+                     ) AS preview_items
+                   FROM orders o
+                   LEFT JOIN anacli an ON o.cod_cli = an.cod_cli
+                   {where_clause}
+                   {order_clause}
+                   LIMIT %s OFFSET %s""",
+                params + [limit, offset],
+            )
 
     def get_order_detail(self, order_id: int, cod_cli: int) -> Optional[dict]:
         # Header
@@ -570,13 +777,41 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
         # Messages (se c'è una sessione associata)
         messages = []
         if order.get("session_id"):
-            messages = execute_query(
-                """SELECT id, sender, content, metadata, created_at
-                   FROM chat_messages
-                   WHERE session_id = %s
-                   ORDER BY created_at ASC""",
-                (order["session_id"],),
-            )
+            messages = self.get_messages_with_feedback(order["session_id"])
+
+        return {
+            "order_id": order["id"],
+            "cod_cli": order["cod_cli"],
+            "data_ord": order["data_ord"],
+            "session_id": order["session_id"],
+            "items": items,
+            "messages": messages,
+        }
+
+    def get_order_detail_any(self, order_id: int) -> Optional[dict]:
+        """Recupera dettaglio ordine senza filtro cod_cli (per admin export)."""
+        order = execute_query_one(
+            """SELECT id, cod_cli, user_id, session_id, data_ord
+               FROM orders WHERE id = %s""",
+            (order_id,),
+        )
+        if not order:
+            return None
+
+        items = execute_query(
+            """SELECT oi.id, oi.cod_art, oi.qta_ordinata, oi.source, oi.last_updated_by,
+                      oi.ai_confidence, oi.related_message_id,
+                      a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um, a.linea, a.famiglia
+               FROM order_items oi
+               LEFT JOIN anaart a ON oi.cod_art = a.cod_art
+               WHERE oi.order_id = %s
+               ORDER BY oi.id ASC""",
+            (order_id,),
+        )
+
+        messages = []
+        if order.get("session_id"):
+            messages = self.get_messages_with_feedback(order["session_id"])
 
         return {
             "order_id": order["id"],
@@ -616,6 +851,95 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
         """
         params = [search_term, search_term, cod_cli, cod_cli] + status_params + [limit]
         return execute_query(sql, params)
+
+    def find_product_by_name(self, product_name: str, cod_cli: int) -> Optional[dict]:
+        """Trova un prodotto tramite fuzzy search sul nome (ILIKE) con filtro assortimento."""
+        results = self.find_products_by_name_fuzzy(product_name, cod_cli, limit=1)
+        if results:
+            results[0]["match_source"] = "name"
+            return results[0]
+        return None
+
+    def find_products_by_name_fuzzy(
+        self, product_name: str, cod_cli: int, limit: int = 5
+    ) -> list[dict]:
+        """Cerca prodotti per nome restituendo risultati ordinati per qualita di match ILIKE.
+
+        Usa un ORDER BY che privilegia le corrispondenze piu precise:
+        1. Nome che inizia con il termine (LIKE 'name%')
+        2. Nome che contiene il termine (LIKE '%name%')
+        3. Nome che contiene il termine in mezzo
+        """
+        status_conditions = " OR ".join(
+            f"UPPER(stato) LIKE %s" for _ in BLOCKING_STATUSES
+        )
+        status_params = [f"{s}%" for s in BLOCKING_STATUSES]
+
+        # Build dynamic ORDER BY for match quality ranking
+        escaped_name = product_name.replace("%", "\\%").replace("_", "\\_")
+
+        # Base query
+        sql = f"""
+            SELECT cod_art, des_art, des_um, pezzi_conf, des_tipo_um, stato,
+                   linea, famiglia,
+                   CASE
+                       WHEN des_art ILIKE %s THEN 1
+                       WHEN des_art ILIKE %s THEN 2
+                       WHEN des_art ILIKE %s THEN 3
+                       ELSE 4
+                   END AS match_rank
+            FROM anaart
+            WHERE des_art ILIKE %s
+            AND (
+                NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
+                OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s AND cod_art = anaart.cod_art)
+            )
+            AND (stato IS NULL OR NOT ({status_conditions}))
+            ORDER BY match_rank, des_art ASC
+            LIMIT %s
+        """
+        params = (
+            [f"{escaped_name}%", f"% {escaped_name}%", f"%{escaped_name}%",
+             f"%{product_name}%", cod_cli, cod_cli]
+            + status_params + [limit]
+        )
+        return execute_query(sql, params)
+
+    def find_product_by_name_merged(self, product_name: str, cod_cli: int,
+                                    embedding: list[float],
+                                    limit: int = 5) -> Optional[dict]:
+        """Cerca prodotto via vector search: embedding del nome → similarita.
+
+        Usa l'embedding generato dal nome estratto dall'immagine
+        per trovare il prodotto piu simile nel catalogo del cliente.
+        Se non ci sono embeddings, cade su ILIKE puro.
+        """
+        if not self.has_embeddings():
+            return self.find_product_by_name(product_name, cod_cli)
+
+        results = self.search_products_vector(embedding, cod_cli, limit=limit)
+        if results:
+            results[0]["match_source"] = "name_merged"
+            return results[0]
+        return None
+
+    def find_product_by_code(self, cod_art: str, cod_cli: int) -> Optional[dict]:
+        """Trova un prodotto tramite codice articolo con filtro assortimento."""
+        result = execute_query_one(
+            """SELECT cod_art, des_art, des_um, pezzi_conf, des_tipo_um, stato,
+                      linea, famiglia
+               FROM anaart
+               WHERE cod_art = %s
+               AND (
+                   NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
+                   OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s AND cod_art = anaart.cod_art)
+               )
+               LIMIT 1""",
+            (cod_art, cod_cli, cod_cli),
+        )
+        if result:
+            result["match_source"] = "code"
+        return result
 
     def save_feedback(self, message_id: int, user_id: int, is_positive: bool,
                       reason_category: Optional[str] = None,
@@ -662,22 +986,180 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     def search_products_for_ai(self, search_term: str, cod_cli: int,
                                limit: int = 5) -> list[dict]:
         """Ricerca prodotti per l'AI (usata dal ConversationService)."""
-        return execute_query(
-            """SELECT a.cod_art, a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um
-               FROM anaart a
-               INNER JOIN asscli ac ON a.cod_art = ac.cod_art AND ac.cod_cli = %s
-               WHERE (a.des_art ILIKE %s OR a.cod_art ILIKE %s)
-               AND (a.stato IS NULL OR UPPER(a.stato) NOT LIKE 'ARTICOLO SOSPESO%%')
-               LIMIT %s""",
-            (cod_cli, f"%{search_term}%", f"%{search_term}%", limit),
+        blocking_conditions = " AND ".join(
+            [f"UPPER(a.stato) NOT LIKE '{s}%%'" for s in BLOCKING_STATUSES]
         )
+        rows = execute_query(
+            f"""SELECT a.cod_art, a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um
+               FROM anaart a
+               WHERE (a.des_art ILIKE %s OR a.cod_art ILIKE %s)
+               AND (a.stato IS NULL OR ({blocking_conditions}))
+               AND (
+                   NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
+                   OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s AND cod_art = a.cod_art)
+               )
+               LIMIT %s""",
+            (f"%{search_term}%", f"%{search_term}%", cod_cli, cod_cli, limit),
+        )
+        for row in rows:
+            row["match_source"] = "ilike_fallback"
+        return rows
+
+    def search_products_keyword_no_asscli(self, keywords: list[str],
+                                          limit: int = 20) -> list[dict]:
+        """Ricerca prodotti SENZA filtro asscli — per verificare se un prodotto
+        esiste nel catalogo ma non nell'assortimento del cliente."""
+        if not keywords:
+            return []
+
+        keyword_conditions = []
+        params: list = []
+
+        for kw in keywords:
+            kw_lower = kw.lower().strip()
+            if not kw_lower:
+                continue
+            keyword_conditions.append(
+                "(a.des_art ILIKE %s OR a.cod_art ILIKE %s)"
+            )
+            params.extend([f"%{kw_lower}%", f"%{kw_lower}%"])
+
+        if not keyword_conditions:
+            return []
+
+        blocking_conditions = " AND ".join(
+            [f"UPPER(a.stato) NOT LIKE '{s}%%'" for s in BLOCKING_STATUSES]
+        )
+
+        sql = f"""
+            SELECT a.cod_art, a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um
+            FROM anaart a
+            WHERE ({") AND (".join(keyword_conditions)})
+            AND (a.stato IS NULL OR ({blocking_conditions}))
+            LIMIT %s"""
+
+        rows = execute_query(sql, params + [limit])
+        for row in rows:
+            row["match_source"] = "catalog"
+        return rows
+
+    def search_products_keyword(self, keywords: list[str], cod_cli: int,
+                                limit: int = 20) -> list[dict]:
+        """Word-level ILIKE search for exact keyword matching.
+
+        Returns products where ALL keywords appear in des_art or cod_art,
+        case-insensitive, order-insensitive, substring, singular/plural aware.
+        Returns dicts with match_source='keyword'.
+        """
+        if not keywords:
+            return []
+
+        keyword_conditions = []
+        params: list = []
+
+        for kw in keywords:
+            kw_lower = kw.lower().strip()
+            if not kw_lower:
+                continue
+            # Primary: exact keyword substring match
+            keyword_conditions.append(
+                "(a.des_art ILIKE %s OR a.cod_art ILIKE %s)"
+            )
+            params.extend([f"%{kw_lower}%", f"%{kw_lower}%"])
+
+            # Fallback: strip common Italian plural suffixes
+            if kw_lower.endswith("i") and len(kw_lower) > 2:
+                plural_fallback = kw_lower[:-1]
+                keyword_conditions.append(
+                    "(a.des_art ILIKE %s OR a.cod_art ILIKE %s)"
+                )
+                params.extend([f"%{plural_fallback}%", f"%{plural_fallback}%"])
+            elif kw_lower.endswith("e") and len(kw_lower) > 2:
+                plural_fallback = kw_lower[:-1]
+                keyword_conditions.append(
+                    "(a.des_art ILIKE %s OR a.cod_art ILIKE %s)"
+                )
+                params.extend([f"%{plural_fallback}%", f"%{plural_fallback}%"])
+
+        if not keyword_conditions:
+            return []
+
+        blocking_conditions = " AND ".join(
+            [f"UPPER(a.stato) NOT LIKE '{s}%%'" for s in BLOCKING_STATUSES]
+        )
+
+        sql = f"""
+            SELECT a.cod_art, a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um
+            FROM anaart a
+            WHERE ({") AND (".join(keyword_conditions)})
+            AND (a.stato IS NULL OR ({blocking_conditions}))
+            AND (
+                NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
+                OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s AND cod_art = a.cod_art)
+            )
+            LIMIT %s"""
+
+        rows = execute_query(sql, params + [cod_cli, cod_cli, limit])
+        for row in rows:
+            row["match_source"] = "keyword"
+        return rows
+
+    def get_embedding(self, cod_art: str) -> Optional[list[float]]:
+        """Recupera l'embedding vettoriale di un prodotto, o None se non presente."""
+        row = execute_query_one(
+            """SELECT embedding FROM product_embeddings WHERE cod_art = %s""",
+            (cod_art,),
+        )
+        if row is None:
+            return None
+        # embedding is stored as a PostgreSQL array (list of floats)
+        return list(row["embedding"])
+
+    def upsert_embedding(self, cod_art: str, embedding: list[float]) -> None:
+        """Inserisce o aggiorna l'embedding di un prodotto."""
+        execute_query(
+            """INSERT INTO product_embeddings (cod_art, embedding)
+               VALUES (%s, %s::vector)
+               ON CONFLICT (cod_art) DO UPDATE SET embedding = EXCLUDED.embedding""",
+            (cod_art, embedding),
+            fetch=False,
+        )
+
+    def search_products_vector(self, query_embedding: list[float],
+                               cod_cli: int, limit: int = 20) -> list[dict]:
+        """Ricerca prodotti per similarita vettoriale (pgvector cosine similarity)."""
+        blocking_conditions = " AND ".join(
+            [f"UPPER(a.stato) NOT LIKE '{s}%%'" for s in BLOCKING_STATUSES]
+        )
+        rows = execute_query(
+            f"""SELECT a.cod_art, a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um,
+                       (pe.embedding <=> %s::vector) AS similarity
+               FROM anaart a
+               INNER JOIN product_embeddings pe ON a.cod_art = pe.cod_art
+               WHERE (a.stato IS NULL OR ({blocking_conditions}))
+               AND (
+                   NOT EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s)
+                   OR EXISTS (SELECT 1 FROM asscli WHERE cod_cli = %s AND cod_art = a.cod_art)
+               )
+               ORDER BY pe.embedding <=> %s::vector
+               LIMIT %s""",
+            (query_embedding, cod_cli, cod_cli, query_embedding, limit),
+        )
+        for row in rows:
+            row["match_source"] = "vector"
+        return rows
+
+    def has_embeddings(self) -> bool:
+        """Ritorna True se esiste almeno un embedding nella tabella."""
+        row = execute_query_one("""SELECT 1 FROM product_embeddings LIMIT 1""")
+        return row is not None
 
     def get_cart_by_client(self, client_id: int,
                            session_id: Optional[int] = None) -> list[dict]:
         """Recupera il carrello per il contesto AI (intent EDIT)."""
         if session_id:
             return execute_query(
-                """SELECT ci.id, ci.cod_art, ci.qta, a.des_art
+                """SELECT ci.id, ci.cod_art, ci.qta, a.des_art, a.des_um
                    FROM cart_items ci
                    LEFT JOIN anaart a ON ci.cod_art = a.cod_art
                    WHERE ci.session_id = %s
@@ -685,13 +1167,12 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                 (session_id,),
             )
         return execute_query(
-            """SELECT ci.id, ci.cod_art, ci.qta, a.des_art
+            """SELECT ci.id, ci.cod_art, ci.qta, a.des_art, a.des_um
                FROM cart_items ci
                LEFT JOIN anaart a ON ci.cod_art = a.cod_art
                WHERE ci.session_id IN (
                    SELECT cs.id FROM chat_sessions cs
-                   JOIN app_users au ON au.id = cs.user_id
-                   WHERE au.cod_cli = %s AND cs.status = 'active'
+                   WHERE cs.user_id = %s AND cs.status = 'active'
                    ORDER BY cs.created_at DESC LIMIT 1
                )
                ORDER BY ci.id""",
@@ -786,6 +1267,112 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             (),
         )
 
+    def get_platform_usage_overview(self, days: int = 14) -> dict:
+        """Metriche aggregate piattaforma per dashboard operatore (sola lettura)."""
+        safe_days = max(7, min(int(days), 90))
+
+        kpis = execute_query_one(
+            """SELECT
+                 (SELECT COUNT(*)::int FROM orders) AS total_orders,
+                 (SELECT COUNT(*)::int FROM tickets) AS total_tickets,
+                 (SELECT COUNT(*)::int FROM tickets WHERE status IN ('aperto', 'in_lavorazione')) AS open_tickets,
+                 (SELECT COUNT(*)::int FROM chat_sessions WHERE status = 'active') AS active_sessions,
+                 (SELECT COUNT(*)::int FROM chat_messages) AS total_messages""",
+            (),
+        ) or {}
+
+        orders_daily = execute_query(
+            """SELECT TO_CHAR(d.day::date, 'YYYY-MM-DD') AS day,
+                      COALESCE(o.count, 0)::int AS value
+               FROM generate_series(
+                    CURRENT_DATE - (%s::int - 1) * INTERVAL '1 day',
+                    CURRENT_DATE,
+                    INTERVAL '1 day'
+               ) AS d(day)
+               LEFT JOIN (
+                    SELECT DATE(data_ord) AS day, COUNT(*)::int AS count
+                    FROM orders
+                    WHERE data_ord >= CURRENT_DATE - (%s::int - 1) * INTERVAL '1 day'
+                    GROUP BY DATE(data_ord)
+               ) o ON o.day = d.day::date
+               ORDER BY d.day ASC""",
+            (safe_days, safe_days),
+        )
+
+        tickets_daily = execute_query(
+            """SELECT TO_CHAR(d.day::date, 'YYYY-MM-DD') AS day,
+                      COALESCE(t.count, 0)::int AS value
+               FROM generate_series(
+                    CURRENT_DATE - (%s::int - 1) * INTERVAL '1 day',
+                    CURRENT_DATE,
+                    INTERVAL '1 day'
+               ) AS d(day)
+               LEFT JOIN (
+                    SELECT DATE(created_at) AS day, COUNT(*)::int AS count
+                    FROM tickets
+                    WHERE created_at >= CURRENT_DATE - (%s::int - 1) * INTERVAL '1 day'
+                    GROUP BY DATE(created_at)
+               ) t ON t.day = d.day::date
+               ORDER BY d.day ASC""",
+            (safe_days, safe_days),
+        )
+
+        status_rows = execute_query(
+            """SELECT status, COUNT(*)::int AS count
+               FROM tickets
+               GROUP BY status""",
+            (),
+        )
+        status_totals = {
+            "aperto": 0,
+            "in_lavorazione": 0,
+            "chiuso": 0,
+        }
+        for row in status_rows:
+            key = str(row.get("status") or "")
+            if key in status_totals:
+                status_totals[key] = int(row.get("count") or 0)
+
+        ticket_status = [
+            {"status": "aperto", "label": "Aperti", "count": status_totals["aperto"]},
+            {"status": "in_lavorazione", "label": "In lavorazione", "count": status_totals["in_lavorazione"]},
+            {"status": "chiuso", "label": "Chiusi", "count": status_totals["chiuso"]},
+        ]
+
+        top_clients = execute_query(
+            """SELECT o.cod_cli,
+                      COALESCE(an.rag_soc, CONCAT('Cliente ', o.cod_cli::text)) AS rag_soc,
+                      COUNT(*)::int AS orders
+               FROM orders o
+               LEFT JOIN anacli an ON an.cod_cli = o.cod_cli
+               WHERE o.data_ord >= NOW() - INTERVAL '30 days'
+               GROUP BY o.cod_cli, an.rag_soc
+               ORDER BY orders DESC, o.cod_cli ASC
+               LIMIT 8""",
+            (),
+        )
+
+        generated_at_row = execute_query_one(
+            "SELECT NOW()::text AS generated_at",
+            (),
+        ) or {}
+
+        return {
+            "generated_at": generated_at_row.get("generated_at"),
+            "range_days": safe_days,
+            "kpis": {
+                "total_orders": int(kpis.get("total_orders") or 0),
+                "total_tickets": int(kpis.get("total_tickets") or 0),
+                "open_tickets": int(kpis.get("open_tickets") or 0),
+                "active_sessions": int(kpis.get("active_sessions") or 0),
+                "total_messages": int(kpis.get("total_messages") or 0),
+            },
+            "orders_daily": orders_daily,
+            "tickets_daily": tickets_daily,
+            "ticket_status": ticket_status,
+            "top_clients": top_clients,
+        }
+
     def get_ticket_by_id(self, ticket_id: int) -> Optional[dict]:
         return execute_query_one(
             """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
@@ -804,27 +1391,21 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                RETURNING id, session_id""",
             (operator_id, ticket_id),
         )
-        if result:
-            session_id = result[0].get("session_id")
-            if session_id:
-                self._save_system_message(session_id, "Un operatore ha preso in carico il ticket di assistenza.")
         return len(result) > 0
 
     def unlock_ticket(self, ticket_id: int) -> None:
         row = execute_query_one(
             """UPDATE tickets
-               SET locked_by = NULL, updated_at = NOW()
-               WHERE id = %s
+               SET status = 'aperto', locked_by = NULL, updated_at = NOW()
+               WHERE id = %s AND status != 'chiuso'
                RETURNING session_id""",
             (ticket_id,),
         )
-        if row and row.get("session_id"):
-            self._save_system_message(row["session_id"], "L'operatore ha rilasciato il ticket. Puoi continuare a chattare.")
-        else:
+        if not row:
             execute_query(
                 """UPDATE tickets
-                   SET locked_by = NULL, updated_at = NOW()
-                   WHERE id = %s""",
+                   SET status = 'aperto', locked_by = NULL, updated_at = NOW()
+                   WHERE id = %s AND status != 'chiuso'""",
                 (ticket_id,),
                 fetch=False,
             )
@@ -837,9 +1418,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                RETURNING session_id""",
             (ticket_id,),
         )
-        if row and row.get("session_id"):
-            self._save_system_message(row["session_id"], "Il ticket di assistenza è stato chiuso. L'assistente AI è di nuovo disponibile per questa sessione.")
-        else:
+        if not row:
             execute_query(
                 """UPDATE tickets
                    SET status = 'chiuso', locked_by = NULL, updated_at = NOW()
@@ -868,6 +1447,51 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             (session_id,),
         )
         return row["created_at"] if row else None
+
+    def get_export_folder(self, user_id: int) -> Optional[str]:
+        row = execute_query_one(
+            "SELECT export_folder FROM app_users WHERE id = %s LIMIT 1",
+            (user_id,),
+        )
+        return row.get("export_folder") if row else None
+
+    def set_export_folder(self, user_id: int, path: Optional[str]) -> None:
+        execute_query(
+            "UPDATE app_users SET export_folder = %s, updated_at = NOW() WHERE id = %s",
+            (path, user_id),
+            fetch=False,
+        )
+
+    def mark_order_exported(self, order_id: int) -> None:
+        # Idempotent: aggiunge la colonna se non esiste (prima esecuzione)
+        try:
+            execute_query(
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS esportato BOOLEAN NOT NULL DEFAULT FALSE",
+                fetch=False,
+            )
+        except Exception:
+            pass  # colonna già esiste
+        execute_query(
+            "UPDATE orders SET esportato = TRUE WHERE id = %s",
+            (order_id,),
+            fetch=False,
+        )
+
+    def mark_orders_exported(self, order_ids: list[int]) -> None:
+        if not order_ids:
+            return
+        try:
+            execute_query(
+                "ALTER TABLE orders ADD COLUMN IF NOT EXISTS esportato BOOLEAN NOT NULL DEFAULT FALSE",
+                fetch=False,
+            )
+        except Exception:
+            pass
+        execute_query(
+            "UPDATE orders SET esportato = TRUE WHERE id = ANY(%s)",
+            (order_ids,),
+            fetch=False,
+        )
 
     def send_message(self, session_id: int, sender: str, content: str) -> int:
         """Salva un messaggio nella chat (operator o customer)."""

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+
 class IUserRepository(ABC):
     """Contratto di accesso ai dati utente e assortimento."""
 
@@ -33,4 +34,14 @@ class IUserRepository(ABC):
     @abstractmethod
     def search_clients(self, query: str, limit: int = 10) -> list[dict]:
         """Cerca clienti per ragione sociale o codice cliente."""
+        ...
+
+    @abstractmethod
+    def get_export_folder(self, user_id: int) -> Optional[str]:
+        """Recupera la cartella di esportazione configurata dall'operatore."""
+        ...
+
+    @abstractmethod
+    def set_export_folder(self, user_id: int, path: Optional[str]) -> None:
+        """Salva la cartella di esportazione per l'operatore."""
         ...

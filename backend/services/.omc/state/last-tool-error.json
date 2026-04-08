@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd /Users/davide/Desktop/ProgettoSWE/mvp/backend && python3 -c \\\"\\nimport importlib.util\\nfor mod in ['domain.schemas', 'services.conversation_service', 'controllers.conversation_controlle...",
+  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 6, in <module>\n    spec.loader.load_module()\n    ~~~~~~~~~~~~~~~~~~~~~~~^^\n  File \"<frozen importlib._bootstrap_external>\", line 680, in _check_name_wrapper\n  File \"<frozen importlib._bootstrap_external>\", line 1207, in load_module\n  File \"<frozen importlib._bootstrap_external>\", line 1031, in load_module\n  File \"<frozen importlib._bootstrap>\", line 537, in _load_module_shim\n  File \"<frozen importlib._bootstrap>\", line 966, i...",
+  "timestamp": "2026-04-03T20:28:05.830Z",
+  "retry_count": 2
+}

@@ -1,12 +1,11 @@
 interface MobileTabBarProps {
-    activePanel: 'chat' | 'cart' | 'history' | 'assistenza';
+    activePanel: 'chat' | 'cart' | 'history';
     cartCount: number;
-    onTabChange: (panel: 'chat' | 'cart' | 'history' | 'assistenza') => void;
-    hasOpenTicket?: boolean;
+    onTabChange: (panel: 'chat' | 'cart' | 'history') => void;
 }
 
-export default function MobileTabBar({ activePanel, cartCount, onTabChange, hasOpenTicket = false }: MobileTabBarProps) {
-    const tabs: { id: MobileTabBarProps['activePanel']; label: string; icon: React.ReactNode; badge?: number; urgent?: boolean }[] = [
+export default function MobileTabBar({ activePanel, cartCount, onTabChange }: MobileTabBarProps) {
+    const tabs: { id: MobileTabBarProps['activePanel']; label: string; icon: React.ReactNode; badge?: number }[] = [
         {
             id: 'chat',
             label: 'Chat',
@@ -22,16 +21,6 @@ export default function MobileTabBar({ activePanel, cartCount, onTabChange, hasO
             id: 'history',
             label: 'Storico',
             icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
-        },
-        {
-            id: 'assistenza',
-            label: 'Assistenza',
-            icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 3h18v4H3z" /><path d="M19 9H5" /><circle cx="7.5" cy="13.5" r="4.5" /><circle cx="17.5" cy="13.5" r="4.5" />
-                </svg>
-            ),
-            urgent: hasOpenTicket,
         },
     ];
 
@@ -50,9 +39,6 @@ export default function MobileTabBar({ activePanel, cartCount, onTabChange, hasO
                             <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[hsl(234,60%,36%)] text-white text-[8px] font-bold rounded-full flex items-center justify-center">
                                 {tab.badge}
                             </span>
-                        )}
-                        {tab.urgent && (
-                            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
                         )}
                     </span>
                     {tab.label}

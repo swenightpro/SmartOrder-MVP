@@ -2,11 +2,9 @@ import Image from 'next/image';
 
 interface TopBarProps {
     onProfileClick: () => void;
-    onAssistenzaClick?: () => void;
-    hasOpenTicket?: boolean;
 }
 
-export default function TopBar({ onProfileClick, onAssistenzaClick, hasOpenTicket = false }: TopBarProps) {
+export default function TopBar({ onProfileClick }: TopBarProps) {
     return (
         <header className="shrink-0 bg-white border-b border-gray-100 shadow-sm z-30">
             <div className="flex items-center gap-3 px-4 py-2.5">
@@ -34,23 +32,6 @@ export default function TopBar({ onProfileClick, onAssistenzaClick, hasOpenTicke
                     </svg>
                     Contattaci
                 </a>
-
-                {/* Assistenza button */}
-                {onAssistenzaClick && (
-                    <button
-                        onClick={onAssistenzaClick}
-                        className="relative flex flex-row items-center justify-center gap-2 shrink-0 px-3 py-1.5 rounded-xl text-sm font-bold text-[hsl(234,60%,40%)] bg-[hsl(234,60%,96%)] hover:bg-[hsl(234,60%,92%)] transition-colors whitespace-nowrap"
-                        title={hasOpenTicket ? "Assistenza aperta" : "Richiedi assistenza"}
-                    >
-                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 3h18v4H3z" /><path d="M19 9H5" /><circle cx="7.5" cy="13.5" r="4.5" /><circle cx="17.5" cy="13.5" r="4.5" />
-                        </svg>
-                        Assistenza
-                        {hasOpenTicket && (
-                            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-                        )}
-                    </button>
-                )}
 
                 {/* User avatar */}
                 <button

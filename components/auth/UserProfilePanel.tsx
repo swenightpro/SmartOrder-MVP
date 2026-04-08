@@ -6,6 +6,7 @@ import { authService } from '@/services';
 interface UserProfilePanelProps {
     client: Client;
     onLogout: () => void;
+    hideLogout?: boolean;
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -20,7 +21,7 @@ function formatDate(d: string | null | undefined): string {
     } catch { return '—'; }
 }
 
-export default function UserProfilePanel({ client, onLogout }: UserProfilePanelProps) {
+export default function UserProfilePanel({ client, onLogout, hideLogout = false }: UserProfilePanelProps) {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [changingPassword, setChangingPassword] = useState(false);
     const [currentPw, setCurrentPw] = useState('');
@@ -31,19 +32,37 @@ export default function UserProfilePanel({ client, onLogout }: UserProfilePanelP
     const [pwLoading, setPwLoading] = useState(false);
     const [logoutLoading, setLogoutLoading] = useState(false);
 
+    // Export folder state (admin only)
+    const [editingFolder, setEditingFolder] = useState(false);
+    const [exportFolder, setExportFolder] = useState('');
+    const [folderLoading, setFolderLoading] = useState(true);
+    const [folderSaving, setFolderSaving] = useState(false);
+    const [folderError, setFolderError] = useState('');
+    const [folderSuccess, setFolderSuccess] = useState('');
+
     useEffect(() => {
         authService.getProfile().then(p => { if (p) setProfile(p); }).catch(() => { });
     }, [client]);
+
+    useEffect(() => {
+        if (profile?.role === 'admin') {
+            setFolderLoading(true);
+            authService.getExportFolder()
+                .then(f => { setExportFolder(f || ''); setFolderLoading(false); })
+                .catch(() => { setExportFolder(''); setFolderLoading(false); });
+        }
+    }, [profile]);
 
     const handleChangePassword = async () => {
         setPwError(''); setPwSuccess('');
         if (!currentPw) { setPwError('Inserisci la password attuale'); return; }
         if (!newPw || newPw.length < 6) { setPwError('La nuova password deve avere almeno 6 caratteri'); return; }
         if (newPw !== confirmPw) { setPwError('Le due password non corrispondono'); return; }
+        if (currentPw === newPw) { setPwError('La nuova password deve essere diversa da quella attuale'); return; }
 
         setPwLoading(true);
         try {
-            await authService.changePassword(currentPw, newPw);
+            await authService.changePassword(currentPw, newPw, confirmPw);
             setPwSuccess('Password aggiornata con successo');
             setCurrentPw(''); setNewPw(''); setConfirmPw(''); setChangingPassword(false);
             const updated = await authService.getProfile();
@@ -52,11 +71,29 @@ export default function UserProfilePanel({ client, onLogout }: UserProfilePanelP
         finally { setPwLoading(false); }
     };
 
+    const handleSaveFolder = async () => {
+        setFolderError('');
+        setFolderSuccess('');
+        setFolderSaving(true);
+        try {
+            const path = exportFolder.trim() || null;
+            await authService.setExportFolder(path);
+            setFolderSuccess('Cartella salvata');
+            setEditingFolder(false);
+        } catch (e) {
+            setFolderError(e instanceof Error ? e.message : 'Errore di rete');
+        } finally {
+            setFolderSaving(false);
+        }
+    };
+
     const handleLogout = async () => {
         setLogoutLoading(true);
         try { await authService.logout(); onLogout(); }
         finally { setLogoutLoading(false); }
     };
+
+    const isAdmin = profile?.role === 'admin';
 
     return (
         <>
@@ -73,6 +110,58 @@ export default function UserProfilePanel({ client, onLogout }: UserProfilePanelP
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Ragione Sociale</label>
                         <div className="w-full px-4 py-3 rounded-2xl text-sm bg-gray-50 text-gray-700 border-2 border-gray-100 font-medium">{profile?.rag_soc || client.rag_soc || '...'}</div>
                     </div>
+
+                    {/* Export folder — solo admin */}
+                    {isAdmin && (
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                                Cartella Esportazione Ordini
+                            </label>
+                            {folderLoading ? (
+                                <div className="w-full px-4 py-3 rounded-2xl text-sm bg-gray-50 border-2 border-gray-100 text-gray-400">Caricamento...</div>
+                            ) : !editingFolder ? (
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 px-4 py-3 rounded-2xl text-sm bg-gray-50 border-2 border-gray-100 text-gray-600 font-mono truncate" title={exportFolder || undefined}>
+                                        {exportFolder || <span className="italic text-gray-400 font-sans">Non configurata</span>}
+                                    </div>
+                                    <button
+                                        onClick={() => { setEditingFolder(true); setFolderError(''); setFolderSuccess(''); }}
+                                        className="shrink-0 px-4 py-3 rounded-2xl text-xs font-bold border-2 border-[hsl(234,60%,85%)] text-[hsl(234,60%,36%)] hover:bg-[hsl(234,60%,96%)] transition-colors">
+                                        {exportFolder ? 'Modifica' : 'Configura'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-2.5 animate-slide-down">
+                                    <input
+                                        type="text"
+                                        value={exportFolder}
+                                        onChange={e => setExportFolder(e.target.value)}
+                                        placeholder="/Users/davide/ordini"
+                                        className="w-full px-4 py-3 rounded-2xl text-sm bg-gray-50 text-gray-800 border-2 border-gray-200 outline-none focus:border-[hsl(234,60%,50%)] transition-all font-mono"
+                                    />
+                                    <p className="text-[10px] text-gray-400 -mt-1">
+                                        Path assoluto della cartella dove verranno salvati i file ordine (es. <span className="font-mono">/Users/davide/ordini</span>).
+                                    </p>
+                                    {folderError && <div className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{folderError}</div>}
+                                    {folderSuccess && <div className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 animate-fade-in">{folderSuccess}</div>}
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => { setEditingFolder(false); setFolderError(''); }}
+                                            className="flex-1 py-2.5 rounded-2xl text-xs font-bold border-2 border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+                                            Annulla
+                                        </button>
+                                        <button
+                                            onClick={handleSaveFolder}
+                                            disabled={folderSaving}
+                                            className="flex-1 py-2.5 rounded-2xl text-xs font-bold bg-[hsl(234,60%,36%)] text-white hover:bg-[hsl(234,60%,30%)] disabled:opacity-60 transition-all">
+                                            {folderSaving ? 'Salvataggio...' : 'Salva'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Password */}
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Password</label>
@@ -117,13 +206,15 @@ export default function UserProfilePanel({ client, onLogout }: UserProfilePanelP
                     </div>
                 </div>
             </div>
-            {/* Logout */}
-            <div className="px-8 pb-8 pt-2">
-                <button onClick={handleLogout} disabled={logoutLoading}
-                    className="w-full py-3 rounded-2xl text-sm font-bold border-2 border-red-200 text-red-600 hover:bg-red-50 transition-all disabled:opacity-60">
-                    {logoutLoading ? 'Logout...' : 'Logout'}
-                </button>
-            </div>
+            {/* Logout — nascosto quando il layout padre ha già il proprio bottone logout */}
+            {!hideLogout && (
+                <div className="px-8 pb-8 pt-2">
+                    <button onClick={handleLogout} disabled={logoutLoading}
+                        className="w-full py-3 rounded-2xl text-sm font-bold border-2 border-red-200 text-red-600 hover:bg-red-50 transition-all disabled:opacity-60">
+                        {logoutLoading ? 'Logout...' : 'Logout'}
+                    </button>
+                </div>
+            )}
         </>
     );
 }

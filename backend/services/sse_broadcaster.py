@@ -2,12 +2,13 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 # Canale speciale per la lista ticket degli operatori (nessuna sessione ha id=0)
 OPERATOR_CHANNEL = 0
+
 
 class SSEBroadcaster:
     """Singleton asyncio-based event broadcaster keyed by session_id."""
@@ -47,6 +48,7 @@ class SSEBroadcaster:
         async with self._lock:
             queues = list(self._subscribers.get(session_id, []))
 
+
         for q in queues:
             try:
                 q.put_nowait(payload)
@@ -68,8 +70,10 @@ class SSEBroadcaster:
         """Conta le connessioni SSE attive totali."""
         return sum(len(qs) for qs in self._subscribers.values())
 
+
 # Singleton a livello di modulo
-_broadcaster: SSEBroadcaster | None = None
+_broadcaster: Optional[SSEBroadcaster] = None
+
 
 def get_broadcaster() -> SSEBroadcaster:
     global _broadcaster

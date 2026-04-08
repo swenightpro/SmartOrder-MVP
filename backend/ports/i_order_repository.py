@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+
 class IOrderRepository(ABC):
     """Contratto di accesso ai dati ordini."""
 
@@ -37,4 +38,9 @@ class IOrderRepository(ABC):
     @abstractmethod
     def get_order_detail(self, order_id: int, cod_cli: int) -> Optional[dict]:
         """Recupera il dettaglio completo di un ordine (header + items + messages)."""
+        ...
+
+    @abstractmethod
+    def get_order_detail_any(self, order_id: int) -> Optional[dict]:
+        """Recupera il dettaglio completo di un ordine senza filtro cod_cli (per admin)."""
         ...
