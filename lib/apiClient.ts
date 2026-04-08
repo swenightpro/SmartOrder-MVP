@@ -1,5 +1,3 @@
-const DEFAULT_API_BASE_URL = 'http://localhost:8000';
-
 type ApiErrorShape = {
     error?: string;
     detail?: string;
@@ -7,8 +5,9 @@ type ApiErrorShape = {
 };
 
 export function getApiBaseUrl(): string {
-    const raw = process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_BASE_URL;
-    return raw.replace(/\/+$/, '');
+    // In production, use /api proxy (same-origin) to avoid cross-domain cookie issues on mobile.
+    // In development, also use /api since Next.js rewrites handle it.
+    return '/api';
 }
 
 export function buildApiUrl(path: string): string {

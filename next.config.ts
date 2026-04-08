@@ -6,9 +6,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   async rewrites() {
     return [
-      // SSE endpoints — rewrite to FastAPI so EventSource works same-origin with cookies
-      { source: '/api/sse/tickets', destination: `${backendUrl}/sse/tickets` },
-      { source: '/api/sse/:sessionId', destination: `${backendUrl}/sse/:sessionId` },
+      // Proxy all API calls through Next.js to avoid cross-domain cookie issues on mobile
+      { source: '/api/:path*', destination: `${backendUrl}/:path*` },
     ];
   },
 };
