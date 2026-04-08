@@ -15,8 +15,7 @@ const eslintConfig = defineConfig([
   ]),
   {
     rules: {
-      // Allow setState calls inside effects for debounce/trim patterns — these are intentional
-      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
 ]);

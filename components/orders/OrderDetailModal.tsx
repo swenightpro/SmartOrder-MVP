@@ -100,7 +100,7 @@ export default function OrderDetailModal({ orderId, codCli, isAdmin = false, onC
                             Feedback cliente: {fb.is_positive ? 'Positivo' : 'Negativo'}
                         </p>
                         {fb.reason_category && <p>Motivo: {fb.reason_category}</p>}
-                        {fb.comment && <p className="italic">"{fb.comment}"</p>}
+                        {fb.comment && <p className="italic">&quot;{fb.comment}&quot;</p>}
                     </div>
                 ))}
             </div>

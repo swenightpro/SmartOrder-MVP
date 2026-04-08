@@ -314,7 +314,7 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
                             <p>Motivo: {fb.reason_category}</p>
                         )}
                         {fb.comment && (
-                            <p className="italic">"{fb.comment}"</p>
+                            <p className="italic">&quot;{fb.comment}&quot;</p>
                         )}
                     </div>
                 ))}
