@@ -24,9 +24,11 @@ def _get_sse_auth_service() -> AuthService:
 
 
 def _get_current_user(request: Request) -> dict:
-    """Middleware di autenticazione SSE: estrae e valida il JWT dal cookie."""
+    """Middleware di autenticazione SSE: estrae e valida il JWT dal cookie o dal query param ?token=."""
     settings = get_settings()
-    token = request.cookies.get(settings.cookie_name)
+    # Try cookie first, then fall back to ?token= query param
+    # (EventSource cannot send cookies cross-origin on Railway)
+    token = request.cookies.get(settings.cookie_name) or request.query_params.get("token")
     if not token:
         raise HTTPException(status_code=401, detail="Non autenticato")
 

@@ -131,3 +131,14 @@ def set_export_folder(body: dict = Body(default={}),
     # Accetta stringa vuota o null per "non configurata"
     auth_service.set_export_folder(user["userId"], path if path else None)
     return {"success": True}
+
+
+@router.get("/sse-token")
+def sse_token(request: Request):
+    """Restituisce il JWT dal cookie HTTPOnly per connessioni SSE dirette."""
+    settings = get_settings()
+    token = request.cookies.get(settings.cookie_name)
+    if not token:
+        raise HTTPException(status_code=401, detail="Non autenticato")
+    return {"token": token}
+
