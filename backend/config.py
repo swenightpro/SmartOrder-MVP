@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"  # comma-separated in prod
-    cors_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    cors_origin_regex: str = r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|.*\.up\.railway\.app)$"
 
     # --- AI models ---
     ai_model: str = "gpt-5.4-2026-03-05"
