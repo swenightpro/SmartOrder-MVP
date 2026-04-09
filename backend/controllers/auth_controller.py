@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Response, HTTPException, Depends, Body
 from typing import Optional
-from domain.schemas import LoginRequest, ChangePasswordRequest, RegisterRequest
+from domain.schemas import LoginRequest, ChangePasswordRequest
 from services.auth_service import AuthService
 from config import get_settings
 
@@ -99,17 +99,6 @@ def change_password(body: ChangePasswordRequest,
         status = 401 if "attuale" in error_msg else 400
         raise HTTPException(status_code=status, detail=error_msg)
     return {"success": True}
-
-
-@router.post("/register")
-def register(body: RegisterRequest,
-             auth_service: AuthService = Depends(_get_auth_service)):
-    ok, error_msg = auth_service.register(
-        body.email, body.password, body.role, body.cod_cli
-    )
-    if not ok:
-        raise HTTPException(status_code=400, detail=error_msg)
-    return {"success": True, "message": "Utente creato con successo"}
 
 
 @router.get("/export-folder")

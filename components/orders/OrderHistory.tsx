@@ -9,46 +9,48 @@ import { EmptyState } from '@/components/ui';
 export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
     const [orders, setOrders] = useState<OrderSummary[]>([]);
     const [loading, setLoading] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [, setPage] = useState(0);
+    const [page, setPage] = useState(0);
     const [hasMore, setHasMore] = useState(true);
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
     // Filtri UC_29, UC_30, UC_31
-    const [filters, setFilters] = useState<OrderFilters>({ sortBy: 'data_ord', sortDir: 'desc' });
+    const [sortBy, setSortBy] = useState<OrderFilters['sortBy']>('data_ord');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     const [searchInput, setSearchInput] = useState('');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
 
-    const observerRef = useRef<HTMLDivElement | null>(null);
-    const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+    const currentFilters = useCallback((): OrderFilters => ({
+        search: searchInput || undefined,
+        sortBy,
+        sortDir,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+    }), [searchInput, sortBy, sortDir, dateFrom, dateTo]);
 
     const fetchOrders = useCallback(async (pageNum: number, f: OrderFilters) => {
         try {
-            if (pageNum === 0) setLoading(true);
-            else setLoadingMore(true);
+            setLoading(true);
 
             const data = await orderService.list(Number(cod_cli), pageNum, f);
             const noFilters = !f.search && !f.dateFrom && !f.dateTo;
 
-            // Se il backend ci restituisce meno del limite, significa che siamo arrivati alla fine.
-            // Limite senza filtri = 50, con filtri = 15.
             const limit = noFilters ? 50 : 15;
-            if (data.length < limit) setHasMore(false);
-
-            setOrders(prev => pageNum === 0 ? data : [...prev, ...data]);
+            setOrders(data);
+            setHasMore(data.length >= limit);
         } catch (e) {
             console.error(e);
+            setOrders([]);
+            setHasMore(false);
         } finally {
             setLoading(false);
-            setLoadingMore(false);
         }
     }, [cod_cli]);
 
     // Apply filters and reset
     const applyFilters = useCallback((f: OrderFilters) => {
-        setOrders([]);
         setPage(0);
         setHasMore(true);
         fetchOrders(0, f);
@@ -59,59 +61,49 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
         setSearchInput(val);
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
         searchTimerRef.current = setTimeout(() => {
-            applyFilters({ ...filters, search: val, dateFrom, dateTo });
+            applyFilters({ ...currentFilters(), search: val || undefined });
         }, 400);
     };
 
     const handleDateFromChange = (val: string) => {
         setDateFrom(val);
-        applyFilters({ ...filters, search: searchInput, dateFrom: val, dateTo });
+        applyFilters({ ...currentFilters(), dateFrom: val || undefined });
     };
 
     const handleDateToChange = (val: string) => {
         setDateTo(val);
-        applyFilters({ ...filters, search: searchInput, dateFrom, dateTo: val });
+        applyFilters({ ...currentFilters(), dateTo: val || undefined });
     };
 
     const handleClearFilters = () => {
         setSearchInput('');
         setDateFrom('');
         setDateTo('');
-        setFilters({ sortBy: 'data_ord', sortDir: 'desc' });
+        setSortBy('data_ord');
+        setSortDir('desc');
         applyFilters({ sortBy: 'data_ord', sortDir: 'desc' });
     };
 
-    const hasActiveFilters = searchInput || dateFrom || dateTo;
+    const hasActiveFilters = Boolean(searchInput || dateFrom || dateTo);
 
     useEffect(() => {
         if (!cod_cli) return;
-        fetchOrders(0, filters);
+        setPage(0);
+        fetchOrders(0, currentFilters());
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cod_cli]);
 
     useEffect(() => {
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
-                setPage(p => {
-                    const nextPage = p + 1;
-                    fetchOrders(nextPage, filters);
-                    return nextPage;
-                });
-            }
-        }, { threshold: 0.1, root: scrollContainerRef.current });
+        return () => {
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        };
+    }, []);
 
-        if (observerRef.current) observer.observe(observerRef.current);
-        return () => observer.disconnect();
-    }, [hasMore, loading, loadingMore, filters, fetchOrders]);
-
-    if (loading) return (
-        <div className="h-full flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-                <div className="w-8 h-8 border-3 border-gray-200 border-t-[hsl(234,60%,36%)] rounded-full animate-spin" />
-                <p className="text-xs text-gray-400 font-medium">Caricamento storico...</p>
-            </div>
-        </div>
-    );
+    const goToPage = (p: number) => {
+        if (p < 0 || p === page) return;
+        setPage(p);
+        fetchOrders(p, currentFilters());
+    };
 
     return (
         <>
@@ -170,8 +162,15 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
                 </div>
 
                 {/* Lista */}
-                <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
-                    {orders.length === 0 ? (
+                <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                    {loading && orders.length === 0 ? (
+                        <div className="h-full flex items-center justify-center">
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="w-8 h-8 border-3 border-gray-200 border-t-[hsl(234,60%,36%)] rounded-full animate-spin" />
+                                <p className="text-xs text-gray-400 font-medium">Caricamento storico...</p>
+                            </div>
+                        </div>
+                    ) : orders.length === 0 ? (
                         <EmptyState icon="list" message={hasActiveFilters ? "Nessun ordine trovato" : "Nessun ordine recente"} />
                     ) : (
                         <>
@@ -183,22 +182,40 @@ export default function OrderHistory({ cod_cli }: { cod_cli: string }) {
                                     onClick={() => setSelectedOrderId(order.order_id)}
                                 />
                             ))}
-
-                            {/* Elemento Sentinella per Infinite Scroll */}
-                            {hasMore && (
-                                <div ref={observerRef} className="py-4 flex justify-center">
-                                    {loadingMore && (
-                                        <div className="w-6 h-6 border-2 border-gray-200 border-t-[hsl(234,60%,36%)] rounded-full animate-spin" />
-                                    )}
-                                </div>
-                            )}
-
-                            {!hasMore && orders.length > 0 && (
-                                <p className="py-4 text-center text-[11px] text-gray-400">Hai raggiunto la fine dello storico.</p>
-                            )}
                         </>
                     )}
                 </div>
+
+                {orders.length > 0 && (
+                    <div className="shrink-0 px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-[11px] text-gray-400 font-medium">
+                            Pagina {page + 1}
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => goToPage(0)}
+                                disabled={page === 0}
+                                className="px-2 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                &laquo;
+                            </button>
+                            <button
+                                onClick={() => goToPage(page - 1)}
+                                disabled={page === 0}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                &lsaquo; Prec
+                            </button>
+                            <button
+                                onClick={() => goToPage(page + 1)}
+                                disabled={!hasMore}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Succ &rsaquo;
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </>
     );

@@ -91,16 +91,6 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             (user_id,),
         )
 
-    def create_user(self, email: str, password_hash: str, password_salt: str,
-                    role: str, cod_cli: Optional[int]) -> dict:
-        row = execute_query_one(
-            """INSERT INTO app_users (email, password_hash, password_salt, role, cod_cli, is_active)
-               VALUES (%s, %s, %s, %s, %s, true)
-               RETURNING id, email, role, cod_cli""",
-            (email, password_hash, password_salt, role, cod_cli),
-        )
-        return row  # type: ignore
-
     def update_password(self, user_id: int, password_hash: str, password_salt: str) -> None:
         execute_query(
             "UPDATE app_users SET password_hash = %s, password_salt = %s, updated_at = NOW() WHERE id = %s",
@@ -586,7 +576,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             p.append(date_from)
 
         if date_to:
-            conditions.append("o.data_ord <= %s::date")
+            conditions.append("o.data_ord < (%s::date + INTERVAL '1 day')")
             p.append(date_to)
 
         if conditions:
@@ -609,14 +599,24 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                              date_from: Optional[str] = None,
                              date_to: Optional[str] = None) -> list[dict]:
         offset = page * limit
-        sort_col, sort_dir_san = self._safe_sort(sort_by, sort_dir, ["data_ord", "id", "item_count"])
+        sort_col, sort_dir_san = self._safe_sort(sort_by, sort_dir, ["data_ord", "id"])
 
-        base_where = "cod_cli = %s"
-        params = [cod_cli]
+        conditions = ["cod_cli = %s"]
+        query_params: list = [cod_cli]
 
-        where_clause, query_params = self._build_order_conditions(
-            base_where, params, search, date_from, date_to
-        )
+        if search:
+            conditions.append("CAST(id AS TEXT) ILIKE %s")
+            query_params.append(f"%{search}%")
+
+        if date_from:
+            conditions.append("data_ord >= %s::date")
+            query_params.append(date_from)
+
+        if date_to:
+            conditions.append("data_ord < (%s::date + INTERVAL '1 day')")
+            query_params.append(date_to)
+
+        where_clause = "WHERE " + " AND ".join(conditions)
 
         order_clause = f"ORDER BY o.{sort_col} {sort_dir_san}, o.id {sort_dir_san}"
         inner_order_clause = f"ORDER BY orders.{sort_col} {sort_dir_san}, orders.id {sort_dir_san}"
@@ -673,7 +673,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             conditions.append("o.data_ord >= %s::date")
             params.append(date_from)
         if date_to:
-            conditions.append("o.data_ord <= %s::date")
+            conditions.append("o.data_ord < (%s::date + INTERVAL '1 day')")
             params.append(date_to)
         if search_cod_cli:
             conditions.append("CAST(o.cod_cli AS TEXT) ILIKE %s")

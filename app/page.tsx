@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Client } from "@/types";
 import { authService, sessionService, chatService, ticketService } from "@/services";
 import { CartProvider, SessionProvider, useCart, useSession } from "@/contexts";
@@ -22,6 +22,7 @@ function AppContent({ selectedClient, onClientChange }: {
   const [mobilePanel, setMobilePanel] = useState<"chat" | "cart" | "history">("chat");
   const [hasOpenTicket, setHasOpenTicket] = useState(false);
   const [ticketStatus, setTicketStatus] = useState<'aperto' | 'in_lavorazione' | null>(null);
+  const sessionResetInProgressRef = useRef(false);
 
   const { cart, refreshCart, clearCart } = useCart();
   const { initSession, showNewSessionModal, cancelNewSession, confirmNewSession, setChatMessages, sessionId } = useSession();
@@ -93,11 +94,11 @@ function AppContent({ selectedClient, onClientChange }: {
     setMobilePanel("history");
     clearCart();
     try {
-      const newId = await sessionService.create();
-      if (newId) { /* sessionId aggiornato dal context */ }
+      await sessionService.create();
+      await initSession();
     } catch (e) { console.error('Errore reset sessione dopo ordine:', e); }
     setChatMessages([{ id: 'post-order-' + Date.now(), role: 'assistant', content: `Ordine confermato con successo! 🎉 Vuoi ordinare altro?` }]);
-  }, [clearCart, setChatMessages]);
+  }, [clearCart, initSession, setChatMessages]);
 
   const handleClientChange = (c: Client | null) => {
     onClientChange(c);
@@ -110,6 +111,26 @@ function AppContent({ selectedClient, onClientChange }: {
     setMobilePanel(panel);
     setActiveTab(panel === 'history' ? 'history' : 'create');
   };
+
+  const handleAssistanceOrderSessionReset = useCallback(async () => {
+    if (sessionResetInProgressRef.current) return;
+    sessionResetInProgressRef.current = true;
+    try {
+      clearCart();
+      await initSession();
+      setChatMessages([{
+        id: 'post-assistance-order-' + Date.now(),
+        role: 'assistant',
+        content: `Ciao ${selectedClient?.rag_soc || ''}! Cosa ti serve oggi?`
+      }]);
+      setMobilePanel('chat');
+      setActiveTab('create');
+    } catch (e) {
+      console.error('Errore reset sessione dopo ordine operatore:', e);
+    } finally {
+      sessionResetInProgressRef.current = false;
+    }
+  }, [clearCart, initSession, selectedClient?.rag_soc, setChatMessages]);
 
   // Check ticket on session change
   useEffect(() => {
@@ -134,13 +155,22 @@ function AppContent({ selectedClient, onClientChange }: {
   useSSE(sessionId ? `/sse/${sessionId}` : null, {
     onEvent: (event) => {
       if (event.type === 'ticket_update') {
-        const update = event.data as { status: string };
+        const update = event.data as { status: string; closed_by?: string };
         if (update.status === 'chiuso') {
           setHasOpenTicket(false);
           setTicketStatus(null);
+          if (update.closed_by === 'order_sent') {
+            void handleAssistanceOrderSessionReset();
+          }
         } else {
           setHasOpenTicket(true);
           setTicketStatus(update.status as 'aperto' | 'in_lavorazione');
+        }
+      } else if (event.type === 'cart_update') {
+        const payload = event.data as { action?: string };
+        // Fallback compatibilità: backend vecchi non inviano closed_by su ticket_update.
+        if (payload.action === 'cleared' && hasOpenTicket) {
+          void handleAssistanceOrderSessionReset();
         }
       }
     },

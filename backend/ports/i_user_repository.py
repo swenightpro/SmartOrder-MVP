@@ -16,12 +16,6 @@ class IUserRepository(ABC):
         ...
 
     @abstractmethod
-    def create_user(self, email: str, password_hash: str, password_salt: str,
-                    role: str, cod_cli: Optional[int]) -> dict:
-        """Crea un nuovo utente e ritorna i suoi dati."""
-        ...
-
-    @abstractmethod
     def update_password(self, user_id: int, password_hash: str, password_salt: str) -> None:
         """Aggiorna hash e salt della password di un utente."""
         ...

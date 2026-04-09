@@ -75,33 +75,3 @@ class TestLoginFlow:
 
         assert logout_resp.status_code == 200
         assert logout_resp.json()["success"] is True
-
-    def test_register_then_login(self, client, mock_auth_service):
-        """ST: registrazione → login con nuovo utente"""
-        # Step 1: Register
-        mock_auth_service.register.return_value = (True, "")
-
-        register_resp = client.post("/auth/register", json={
-            "email": "new@test.com",
-            "password": "password123",
-            "role": "customer",
-            "cod_cli": 100,
-        })
-
-        assert register_resp.status_code == 200
-
-        # Step 2: Login con credenziali appena create
-        mock_auth_service.login.return_value = {
-            "token": "jwt_for_new_user",
-            "cod_cli": 100,
-            "rag_soc": "New Company",
-            "role": "customer",
-        }
-
-        login_resp = client.post("/auth/login", json={
-            "email": "new@test.com",
-            "password": "password123",
-        })
-
-        assert login_resp.status_code == 200
-        assert login_resp.json()["user"]["cod_cli"] == 100

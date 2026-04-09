@@ -40,8 +40,12 @@ export const ticketService = {
     },
 
     // Close ticket
-    closeTicket: async (ticketId: number): Promise<void> => {
-        const res = await apiFetch(`/tickets/${ticketId}/close`, { method: 'PATCH' });
+    closeTicket: async (ticketId: number, closedBy: 'operator' | 'customer' | 'order_sent' = 'operator'): Promise<void> => {
+        const res = await apiFetch(`/tickets/${ticketId}/close`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ closed_by: closedBy }),
+        });
         if (!res.ok) throw new Error(await getApiErrorMessage(res, 'Errore chiusura ticket'));
     },
 

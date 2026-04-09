@@ -11,13 +11,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    role: str = "customer"
-    cod_cli: Optional[int] = None
-
-
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str

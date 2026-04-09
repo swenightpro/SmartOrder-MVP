@@ -181,7 +181,7 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
         setActionLoading(true);
         setActionError('');
         try {
-            await ticketService.closeTicket(ticketId);
+            await ticketService.closeTicket(ticketId, 'operator');
             onUnlocked();
         } catch (e) {
             setActionError(e instanceof Error ? e.message : 'Errore chiusura');
@@ -205,7 +205,7 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
             }));
             await orderService.create(detail.cod_cli, detail.session_id, items);
             // Chiudi ticket e notifica
-            await ticketService.closeTicket(ticketId);
+            await ticketService.closeTicket(ticketId, 'order_sent');
             onUnlocked();
         } catch (e) {
             setActionError(e instanceof Error ? e.message : 'Errore invio ordine');

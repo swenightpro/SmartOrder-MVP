@@ -94,22 +94,26 @@ export default function UserProfilePanel({ client, onLogout, hideLogout = false 
     };
 
     const isAdmin = profile?.role === 'admin';
+    const isOperator = profile?.role === 'admin' || profile?.role === 'operator';
+    const personalAreaTitle = isOperator ? 'Area personale operatore' : 'Area personale cliente';
 
     return (
         <>
             <div className="px-8 pt-8 pb-5">
-                <h2 className="text-lg font-extrabold text-gray-900 tracking-tight mb-5">Area personale</h2>
+                <h2 className="text-lg font-extrabold text-gray-900 tracking-tight mb-5">{personalAreaTitle}</h2>
                 <div className="space-y-4">
                     {/* Email */}
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Email</label>
                         <div className="w-full px-4 py-3 rounded-2xl text-sm bg-gray-50 text-gray-700 border-2 border-gray-100 font-medium">{profile?.email || '...'}</div>
                     </div>
-                    {/* Ragione sociale */}
-                    <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Ragione Sociale</label>
-                        <div className="w-full px-4 py-3 rounded-2xl text-sm bg-gray-50 text-gray-700 border-2 border-gray-100 font-medium">{profile?.rag_soc || client.rag_soc || '...'}</div>
-                    </div>
+                    {/* Ragione sociale (solo customer) */}
+                    {!isOperator && (
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Ragione Sociale</label>
+                            <div className="w-full px-4 py-3 rounded-2xl text-sm bg-gray-50 text-gray-700 border-2 border-gray-100 font-medium">{profile?.rag_soc || client.rag_soc || '...'}</div>
+                        </div>
+                    )}
 
                     {/* Export folder — solo admin */}
                     {isAdmin && (

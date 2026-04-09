@@ -1,7 +1,6 @@
 "use client";
 import { useState } from 'react';
 import type { CartItem } from '@/types';
-import { ConfidenceRing } from '@/components/ui';
 
 interface CartItemRowProps {
     item: CartItem;
@@ -133,11 +132,6 @@ export default function CartItemRow({ item, isBlocked = false, onRemove, onUpdat
                         </svg>
                     </button>
 
-                    {item.ai_confidence != null && !isDraft && (
-                        <div className="mt-auto">
-                            <ConfidenceRing value={item.ai_confidence} size={32} />
-                        </div>
-                    )}
                 </div>
             </div>
         </div>

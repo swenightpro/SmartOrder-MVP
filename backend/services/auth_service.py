@@ -214,25 +214,3 @@ class AuthService:
         new_hash, new_salt = self.hash_password(new_password)
         self._repo.update_password(user_id, new_hash, new_salt)
         return True, ""
-
-    def register(self, email: str, password: str, role: str,
-                 cod_cli: Optional[int]) -> tuple[bool, str]:
-        """Registra un nuovo utente. Ritorna (successo, messaggio_errore)."""
-        if not email or not password:
-            return False, "Email e password sono obbligatori"
-
-        # Validazione ruolo
-        user_role = "admin" if role == "admin" else "customer"
-
-        if user_role == "customer" and not cod_cli:
-            return False, "Codice cliente (cod_cli) obbligatorio per i customer"
-
-        # Check duplicato
-        existing = self._repo.find_by_email(email)
-        if existing:
-            return False, "Email già registrata. Usa un'altra email."
-
-        pw_hash, pw_salt = self.hash_password(password)
-        self._repo.create_user(email, pw_hash, pw_salt, user_role,
-                               cod_cli if user_role == "customer" else None)
-        return True, ""

@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # --- AI models ---
     ai_model: str = "gpt-5.4-2026-03-05"
-    ai_model_mini: str = "gpt-5.4-2026-03-05"
+    ai_model_mini: str = "gpt-5.4-mini-2026-03-05"
     whisper_model: str = "whisper-1"
     embedding_model: str = "text-embedding-3-small"
 

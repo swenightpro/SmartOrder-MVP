@@ -124,11 +124,13 @@ class TicketService:
                     "ticket_id": ticket_id,
                     "status": "chiuso",
                     "session_id": session_id,
+                    "closed_by": closed_by,
                 })
                 await self._broadcaster.emit(OPERATOR_CHANNEL, "ticket_update", {
                     "ticket_id": ticket_id,
                     "status": "chiuso",
                     "session_id": session_id,
+                    "closed_by": closed_by,
                 })
 
     async def send_chat_message(self, ticket_id: int, content: str) -> dict:

@@ -6,6 +6,7 @@ export type NavItem = 'ticket' | 'analytics' | 'storico' | 'profilo';
 interface OperatorLayoutProps {
     activeNav: NavItem;
     onNavChange: (nav: NavItem) => void;
+    onProfileClick: () => void;
     onLogout: () => void;
     children: React.ReactNode;
     profileName?: string;
@@ -50,11 +51,13 @@ const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
     },
 ];
 
-export default function OperatorLayout({ activeNav, onNavChange, onLogout, children }: OperatorLayoutProps) {
+export default function OperatorLayout({ activeNav, onNavChange, onProfileClick, onLogout, children }: OperatorLayoutProps) {
+    const sidebarNavItems = navItems.filter(item => item.id !== 'profilo');
+
     return (
         <div className="h-screen flex flex-col overflow-hidden">
             {/* TopBar */}
-            <TopBar onProfileClick={() => {}} />
+            <TopBar onProfileClick={onProfileClick} />
 
             {/* Desktop: sidebar + main content */}
             <div className="hidden md:flex flex-1 overflow-hidden">
@@ -76,7 +79,7 @@ export default function OperatorLayout({ activeNav, onNavChange, onLogout, child
 
                     {/* Nav items */}
                     <nav className="flex-1 px-3 space-y-1">
-                        {navItems.map(item => (
+                        {sidebarNavItems.map(item => (
                             <button
                                 key={item.id}
                                 onClick={() => onNavChange(item.id)}
@@ -124,7 +127,7 @@ export default function OperatorLayout({ activeNav, onNavChange, onLogout, child
 
                 {/* Bottom tab bar */}
                 <nav className="shrink-0 bg-white border-t border-gray-100 flex">
-                    {navItems.map(item => (
+                    {sidebarNavItems.map(item => (
                         <button
                             key={item.id}
                             onClick={() => onNavChange(item.id)}

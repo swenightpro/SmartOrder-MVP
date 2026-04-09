@@ -50,7 +50,10 @@ export default function CartPanel({ currentClient, onClose, onOrderSuccess, hasO
     setError('');
     try {
       const res = await addItem(selectedProduct.cod_art, qty, { source: 'customer' });
-      if (!res.ok) { const data = await res.json(); throw new Error(data.error || "Errore durante l'aggiunta al carrello"); }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || data.detail || "Errore durante l'aggiunta al carrello");
+      }
       setSelectedProduct(null);
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Errore"); }
   };

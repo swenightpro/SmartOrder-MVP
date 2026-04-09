@@ -180,39 +180,6 @@ class TestAuthControllerChangePassword:
         assert resp.status_code == 400
 
 
-class TestAuthControllerRegister:
-    """IT: POST /auth/register"""
-
-    def test_register_success(self, client, mock_auth_service):
-        """Test: register con dati validi crea utente"""
-        mock_auth_service.register.return_value = (True, "")
-
-        resp = client.post("/auth/register", json={
-            "email": "new@test.com",
-            "password": "password123",
-            "role": "customer",
-            "cod_cli": 100,
-        })
-
-        assert resp.status_code == 200
-        assert resp.json()["success"] is True
-
-    def test_register_duplicate(self, client, mock_auth_service):
-        """Test: register con email duplicata ritorna 400"""
-        mock_auth_service.register.return_value = (
-            False, "Email già registrata. Usa un'altra email."
-        )
-
-        resp = client.post("/auth/register", json={
-            "email": "dup@test.com",
-            "password": "password123",
-            "role": "customer",
-            "cod_cli": 100,
-        })
-
-        assert resp.status_code == 400
-
-
 class TestAuthControllerExportFolder:
     """IT: GET/PUT /auth/export-folder"""
 
