@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Ticket } from '@/types';
 import { ticketService } from '@/services';
 import TicketSubentroModal from './TicketSubentroModal';
+import TicketReadOnlyModal from './TicketReadOnlyModal';
 import { useSSE } from '@/hooks/useSSE';
 
 function formatWaiting(minutes?: number): string {
@@ -38,7 +39,9 @@ export default function TicketDashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
+    const [readOnlyTicketId, setReadOnlyTicketId] = useState<number | null>(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [locking, setLocking] = useState(false);
 
     const fetchTickets = useCallback(async (showLoader = true) => {
         if (showLoader) setLoading(true);
@@ -78,6 +81,20 @@ export default function TicketDashboard() {
         },
     });
 
+    const handleTicketClick = async (ticket: Ticket) => {
+        if (locking) return;
+        setLocking(true);
+        try {
+            await ticketService.lockTicket(ticket.id);
+            setSelectedTicketId(ticket.id);
+        } catch {
+            // Lock fallito (409 o altro) → apri in sola lettura
+            setReadOnlyTicketId(ticket.id);
+        } finally {
+            setLocking(false);
+        }
+    };
+
     const handleTicketClosed = () => {
         setSelectedTicketId(null);
         fetchTickets(false);
@@ -100,6 +117,12 @@ export default function TicketDashboard() {
                 <TicketSubentroModal
                     ticketId={selectedTicketId}
                     onUnlocked={handleTicketClosed}
+                />
+            )}
+            {readOnlyTicketId !== null && (
+                <TicketReadOnlyModal
+                    ticketId={readOnlyTicketId}
+                    onClose={() => { setReadOnlyTicketId(null); fetchTickets(false); }}
                 />
             )}
 
@@ -156,7 +179,7 @@ export default function TicketDashboard() {
                                     return (
                                         <tr
                                             key={ticket.id}
-                                            onClick={() => setSelectedTicketId(ticket.id)}
+                                            onClick={() => handleTicketClick(ticket)}
                                             className="border-b border-gray-50 hover:bg-[hsl(234,60%,97%)] cursor-pointer transition-colors animate-slide-up"
                                             style={{ animationDelay: `${idx * 30}ms` }}
                                         >

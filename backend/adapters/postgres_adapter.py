@@ -1388,8 +1388,9 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                    updated_at = NOW()
                WHERE id = %s
                  AND status != 'chiuso'
+                 AND (locked_by IS NULL OR locked_by = %s)
                RETURNING id, session_id""",
-            (operator_id, ticket_id),
+            (operator_id, ticket_id, operator_id),
         )
         return len(result) > 0
 

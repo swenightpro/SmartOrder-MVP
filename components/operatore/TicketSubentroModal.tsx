@@ -49,7 +49,7 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
         }
     }, [detail?.session_id]);
 
-    // Fetch detail + lock ticket on open
+    // Fetch detail (lock already acquired by TicketDashboard)
     useEffect(() => {
         let mounted = true;
 
@@ -57,7 +57,6 @@ export default function TicketSubentroModal({ ticketId, onUnlocked }: TicketSube
             setLoadingTicket(true);
             setError('');
             try {
-                await ticketService.lockTicket(ticketId);
                 const data = await ticketService.getTicketDetail(ticketId);
                 if (!mounted) return;
                 setDetail(data);
