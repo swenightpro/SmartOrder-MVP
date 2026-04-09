@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Optional
 
 from ports.i_ticket_repository import ITicketRepository
@@ -29,11 +30,12 @@ class TicketService:
                         "Il ticket di assistenza è stato aperto.",
             )
 
-        return ticket
+        return dataclasses.asdict(ticket)
 
     def get_open_tickets(self) -> list[dict]:
         """Ritorna i ticket aperti/in lavorazione arricchiti con rag_soc e tempo di attesa."""
-        tickets = self._ticket_repo.get_open_tickets()
+        ticket_objects = self._ticket_repo.get_open_tickets()
+        tickets = [dataclasses.asdict(t) for t in ticket_objects]
 
         for ticket in tickets:
             # Calcola tempo di attesa in minuti
@@ -54,22 +56,22 @@ class TicketService:
 
     def get_ticket_by_id(self, ticket_id: int) -> Optional[dict]:
         """Ritorna il ticket con dati arricchiti (rag_soc, messaggi)."""
-        ticket = self._ticket_repo.get_ticket_by_id(ticket_id)
-        if not ticket:
+        ticket_obj = self._ticket_repo.get_ticket_by_id(ticket_id)
+        if not ticket_obj:
             return None
 
+        ticket = dataclasses.asdict(ticket_obj)
+
         if self._db is not None:
-            # Arricchisci con rag_soc
             if ticket.get("cod_cli"):
                 client = self._db.get_client_info(ticket["cod_cli"])
                 ticket["rag_soc"] = client["rag_soc"] if client else ""
 
-            # Recupera messaggi e carrello della sessione
             if ticket.get("session_id"):
                 messages = self._db.get_messages_with_feedback(ticket["session_id"])
                 ticket["messages"] = messages
                 cart_items = self._db.get_cart_by_session(ticket["session_id"])
-                ticket["cart_items"] = cart_items
+                ticket["cart_items"] = [dataclasses.asdict(c) for c in cart_items]
 
         return ticket
 
@@ -78,17 +80,17 @@ class TicketService:
         result = self._ticket_repo.lock_ticket(ticket_id, operator_id)
         if result and self._broadcaster:
             ticket = self._ticket_repo.get_ticket_by_id(ticket_id)
-            if ticket and ticket.get("session_id"):
-                await self._broadcaster.emit(ticket["session_id"], "ticket_update", {
+            if ticket and ticket.session_id:
+                await self._broadcaster.emit(ticket.session_id, "ticket_update", {
                     "ticket_id": ticket_id,
                     "status": "in_lavorazione",
-                    "session_id": ticket["session_id"],
+                    "session_id": ticket.session_id,
                     "locked_by": operator_id,
                 })
                 await self._broadcaster.emit(OPERATOR_CHANNEL, "ticket_update", {
                     "ticket_id": ticket_id,
                     "status": "in_lavorazione",
-                    "session_id": ticket["session_id"],
+                    "session_id": ticket.session_id,
                     "locked_by": operator_id,
                 })
         return result
@@ -97,8 +99,8 @@ class TicketService:
         """Rilascia il lock dell'operatore sul ticket."""
         ticket = self._ticket_repo.get_ticket_by_id(ticket_id)
         self._ticket_repo.unlock_ticket(ticket_id)
-        if self._broadcaster and ticket and ticket.get("session_id"):
-            session_id = ticket["session_id"]
+        if self._broadcaster and ticket and ticket.session_id:
+            session_id = ticket.session_id
             await self._broadcaster.emit(session_id, "ticket_update", {
                 "ticket_id": ticket_id,
                 "status": "aperto",
@@ -118,7 +120,7 @@ class TicketService:
         self._ticket_repo.close_ticket(ticket_id)
 
         if ticket:
-            session_id = ticket.get("session_id")
+            session_id = ticket.session_id
             if session_id and self._broadcaster:
                 await self._broadcaster.emit(session_id, "ticket_update", {
                     "ticket_id": ticket_id,
@@ -138,9 +140,9 @@ class TicketService:
         ticket = self._ticket_repo.get_ticket_by_id(ticket_id)
         if not ticket:
             raise ValueError(f"Ticket {ticket_id} non trovato")
-        if ticket.get("status") == "chiuso":
+        if ticket.status == "chiuso":
             raise ValueError("Impossibile inviare messaggi: ticket chiuso")
-        session_id = ticket.get("session_id")
+        session_id = ticket.session_id
         if not session_id:
             raise ValueError("Ticket senza sessione associata")
         msg_id = self._db.send_message(session_id, "operator", content)
@@ -155,9 +157,11 @@ class TicketService:
 
     def get_ticket_by_session(self, session_id: int, cod_cli: Optional[int] = None) -> Optional[dict]:
         """Ritorna il ticket associato a una sessione, con arricchimento dati."""
-        ticket = self._ticket_repo.get_ticket_by_session(session_id, cod_cli)
-        if not ticket:
+        ticket_obj = self._ticket_repo.get_ticket_by_session(session_id, cod_cli)
+        if not ticket_obj:
             return None
+
+        ticket = dataclasses.asdict(ticket_obj)
 
         if self._db is not None:
             if ticket.get("cod_cli"):
@@ -168,10 +172,10 @@ class TicketService:
 
     async def close_ticket_by_session(self, session_id: int, closed_by: str = "customer", cod_cli: Optional[int] = None) -> None:
         """Chiude il ticket associato a una sessione."""
-        ticket = self._ticket_repo.get_ticket_by_session(session_id, cod_cli)
-        if not ticket:
+        ticket_obj = self._ticket_repo.get_ticket_by_session(session_id, cod_cli)
+        if not ticket_obj:
             return
-        await self.close_ticket(ticket["id"], closed_by=closed_by)
+        await self.close_ticket(ticket_obj.id, closed_by=closed_by)
 
     async def save_customer_message(self, session_id: int, content: str) -> dict:
         """Salva un messaggio del cliente e lo notifica via SSE all'operatore."""

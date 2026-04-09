@@ -21,7 +21,9 @@ def mock_cart_service():
 @pytest.fixture
 def mock_db():
     db = Mock()
-    db.get_active_session.return_value = {"id": 456}
+    session = Mock()
+    session.id = 456
+    db.get_active_session.return_value = session
     return db
 
 

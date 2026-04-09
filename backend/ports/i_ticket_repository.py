@@ -1,27 +1,29 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from domain.models import Ticket
+
 
 class ITicketRepository(ABC):
     """Contratto di accesso ai dati ticket di assistenza."""
 
     @abstractmethod
-    def create_ticket(self, session_id: int, cod_cli: int) -> dict:
-        """Crea un nuovo ticket e lo ritorna (include id)."""
+    def create_ticket(self, session_id: int, cod_cli: int) -> Ticket:
+        """Crea un nuovo ticket e lo ritorna."""
         ...
 
     @abstractmethod
-    def get_ticket_by_session(self, session_id: int, cod_cli: Optional[int] = None) -> Optional[dict]:
-        """Recupera il ticket attivo per una sessione, opzionalmente filtrato per cod_cli. Ritorna None se non trovato."""
+    def get_ticket_by_session(self, session_id: int, cod_cli: Optional[int] = None) -> Optional[Ticket]:
+        """Recupera il ticket attivo per una sessione. Ritorna None se non trovato."""
         ...
 
     @abstractmethod
-    def get_open_tickets(self) -> list[dict]:
-        """Ritorna tutti i ticket aperti o in lavorazione, ordinati per attesa decrescente."""
+    def get_open_tickets(self) -> list[Ticket]:
+        """Ritorna tutti i ticket aperti o in lavorazione."""
         ...
 
     @abstractmethod
-    def get_ticket_by_id(self, ticket_id: int) -> Optional[dict]:
+    def get_ticket_by_id(self, ticket_id: int) -> Optional[Ticket]:
         """Recupera un ticket per ID. Ritorna None se non trovato."""
         ...
 
@@ -32,12 +34,12 @@ class ITicketRepository(ABC):
 
     @abstractmethod
     def unlock_ticket(self, ticket_id: int) -> None:
-        """Rilascia il lock sull'operatore, mantiene lo stato corrente."""
+        """Rilascia il lock sull'operatore."""
         ...
 
     @abstractmethod
     def close_ticket(self, ticket_id: int) -> None:
-        """Imposta lo stato 'chiuso' e rilascia il lock."""
+        """Imposta lo stato 'chiuso'."""
         ...
 
     @abstractmethod

@@ -27,14 +27,14 @@ def _assert_session_access(session_id: int, user: dict, db: PostgresAdapter) -> 
         ticket = db.get_ticket_by_session(session_id)
         if not ticket:
             raise HTTPException(status_code=403, detail="Sessione non associata a ticket")
-        if ticket.get("status") != "in_lavorazione":
+        if ticket.status != "in_lavorazione":
             raise HTTPException(status_code=403, detail="Ticket non in lavorazione")
-        if int(ticket.get("locked_by") or 0) != int(user["userId"]):
+        if int(ticket.locked_by or 0) != int(user["userId"]):
             raise HTTPException(status_code=403, detail="Ticket non in carico all'operatore corrente")
         return
 
     session = db.get_active_session(int(user["userId"]))
-    if not session or int(session["id"]) != int(session_id):
+    if not session or int(session.id) != int(session_id):
         raise HTTPException(status_code=403, detail="Sessione non autorizzata")
 
 

@@ -147,21 +147,21 @@ class AuthService:
         if not user:
             return None
 
-        if not self.verify_password(password, user["password_hash"], user["password_salt"]):
+        if not self.verify_password(password, user.password_hash, user.password_salt):
             return None
 
-        cod_cli = int(user.get("cod_cli") or 0)
+        cod_cli = int(user.cod_cli or 0)
         rag_soc = ""
         if cod_cli:
             client = self._repo.get_client_info(cod_cli)
             rag_soc = client["rag_soc"] if client else ""
 
-        token = self.create_jwt(user["id"], cod_cli, user["role"])
+        token = self.create_jwt(user.id, cod_cli, user.role)
         return {
             "token": token,
             "cod_cli": cod_cli,
             "rag_soc": rag_soc,
-            "role": user["role"],
+            "role": user.role,
         }
 
     def get_profile(self, user_id: int) -> Optional[dict]:
@@ -170,20 +170,20 @@ class AuthService:
         if not user:
             return None
 
-        cod_cli = int(user.get("cod_cli") or 0)
+        cod_cli = int(user.cod_cli or 0)
         rag_soc = ""
         if cod_cli:
             client = self._repo.get_client_info(cod_cli)
             rag_soc = client["rag_soc"] if client else ""
 
         return {
-            "email": user["email"],
+            "email": user.email,
             "cod_cli": cod_cli,
             "rag_soc": rag_soc,
-            "role": user["role"],
-            "export_folder": user.get("export_folder"),
-            "created_at": str(user.get("created_at", "")),
-            "updated_at": str(user.get("updated_at", "")),
+            "role": user.role,
+            "export_folder": user.export_folder,
+            "created_at": str(user.created_at or ""),
+            "updated_at": str(user.updated_at or ""),
         }
 
     def get_export_folder(self, user_id: int) -> Optional[str]:
@@ -208,7 +208,7 @@ class AuthService:
         if not user:
             return False, "Utente non trovato"
 
-        if not self.verify_password(current_password, user["password_hash"], user["password_salt"]):
+        if not self.verify_password(current_password, user.password_hash, user.password_salt):
             return False, "La password attuale non è corretta"
 
         new_hash, new_salt = self.hash_password(new_password)

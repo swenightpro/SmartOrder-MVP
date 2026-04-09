@@ -84,7 +84,7 @@ async def chat_image(
 
     try:
         # Step 1: Vision OCR
-        history_rows = conv_service.get_messages(session["id"])
+        history_rows = conv_service.get_messages(session.id)
         history = [
             {"role": "user" if r["sender"] == "user" else "assistant",
              "content": r.get("content") or ""}
@@ -123,14 +123,14 @@ async def chat_image(
         else:
             # Vision failed or no text — return error directly (no handle_message call)
             user_msg_id = conv_service._db.save_image_message(
-                session_id=session["id"],
+                session_id=session.id,
                 sender="user",
                 image_base64=image_b64,
                 ocr_text="",
                 metadata=json.dumps({"type": "image"}),
             )
             if conv_service._broadcaster:
-                await conv_service._broadcaster.emit(session["id"], "image_message", {
+                await conv_service._broadcaster.emit(session.id, "image_message", {
                     "id": user_msg_id,
                     "sender": "user",
                     "image_data": image_b64,
@@ -141,7 +141,7 @@ async def chat_image(
                     "sender": "user",
                     "image_data": image_b64,
                     "ocr_text": "",
-                    "session_id": session["id"],
+                    "session_id": session.id,
                 })
             return {
                 "success": False,
@@ -152,7 +152,7 @@ async def chat_image(
 
         # Step 3: Save user image message to DB BEFORE handle_message
         user_msg_id = conv_service._db.save_image_message(
-            session_id=session["id"],
+            session_id=session.id,
             sender="user",
             image_base64=image_b64,
             ocr_text=extracted_text,
@@ -161,7 +161,7 @@ async def chat_image(
 
         # Step 4: Emit image_message SSE (customer sees photo)
         if conv_service._broadcaster:
-            await conv_service._broadcaster.emit(session["id"], "image_message", {
+            await conv_service._broadcaster.emit(session.id, "image_message", {
                 "id": user_msg_id,
                 "sender": "user",
                 "image_data": image_b64,
@@ -172,7 +172,7 @@ async def chat_image(
                 "sender": "user",
                 "image_data": image_b64,
                 "ocr_text": extracted_text,
-                "session_id": session["id"],
+                "session_id": session.id,
             })
 
         # Step 5: Call handle_message() with virtual message (normal AI flow)
@@ -181,7 +181,7 @@ async def chat_image(
             message=virtual_message,
             client_id=user["cod_cli"],
             history=history_for_ai,
-            session_id=session["id"],
+            session_id=session.id,
             pending_cart_edits=None,
         )
 
@@ -214,7 +214,7 @@ async def chat_image(
 
                 try:
                     conv_service._db.add_to_cart_by_session(
-                        session_id=session["id"],
+                        session_id=session.id,
                         cod_art=cod_art,
                         qta=qta,
                         source="ai",
@@ -227,23 +227,23 @@ async def chat_image(
                     cart_failed_codes.append(cod_art)
 
             if conv_service._broadcaster and cart_added_codes:
-                await conv_service._broadcaster.emit(session["id"], "cart_update", {})
+                await conv_service._broadcaster.emit(session.id, "cart_update", {})
 
         # Step 6: Save/transmit AI response
         if result.get("ai_message_id"):
             if conv_service._broadcaster:
-                await conv_service._broadcaster.emit(session["id"], "message", {
+                await conv_service._broadcaster.emit(session.id, "message", {
                     "id": result["ai_message_id"],
                     "sender": "ai",
                     "content": result.get("response") or result.get("message") or "",
                 })
         else:
             ai_msg_id = conv_service._db.save_message(
-                session["id"], "ai", result.get("response") or result.get("message") or ""
+                session.id, "ai", result.get("response") or result.get("message") or ""
             )
             result["ai_message_id"] = ai_msg_id
             if conv_service._broadcaster:
-                await conv_service._broadcaster.emit(session["id"], "message", {
+                await conv_service._broadcaster.emit(session.id, "message", {
                     "id": ai_msg_id,
                     "sender": "ai",
                     "content": result.get("response") or result.get("message") or "",
@@ -312,7 +312,7 @@ def get_active_session(user: dict = Depends(_get_current_user),
                        conv_service: ConversationService = Depends(_get_conversation_service)):
     session = conv_service.get_active_session(user["userId"])
     if session:
-        return {"session": {"id": session["id"]}}
+        return {"session": {"id": session.id}}
     return {"session": None}
 
 
@@ -320,7 +320,7 @@ def get_active_session(user: dict = Depends(_get_current_user),
 def create_session(user: dict = Depends(_get_current_user),
                    conv_service: ConversationService = Depends(_get_conversation_service)):
     session = conv_service.create_session(user["userId"])
-    return {"session": {"id": session["id"]}}
+    return {"session": {"id": session.id}}
 
 
 # ---------------------------------------------------------------------------

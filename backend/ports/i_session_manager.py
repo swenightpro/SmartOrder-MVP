@@ -1,18 +1,20 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from domain.models import CartItem, Session
+
 
 class ISessionManager(ABC):
     """Contratto di accesso a sessioni, messaggi e carrelli."""
 
     # --- Sessioni ---
     @abstractmethod
-    def get_active_session(self, user_id: int) -> Optional[dict]:
+    def get_active_session(self, user_id: int) -> Optional[Session]:
         """Recupera la sessione attiva per l'utente. None se non esiste."""
         ...
 
     @abstractmethod
-    def create_session(self, user_id: int) -> dict:
+    def create_session(self, user_id: int) -> Session:
         """Crea una nuova sessione e ritorna i dati."""
         ...
 
@@ -30,12 +32,12 @@ class ISessionManager(ABC):
 
     # --- Carrello ---
     @abstractmethod
-    def get_cart_by_session(self, session_id: int) -> list[dict]:
+    def get_cart_by_session(self, session_id: int) -> list[CartItem]:
         """Recupera gli articoli nel carrello di una sessione specifica."""
         ...
 
     @abstractmethod
-    def get_cart(self, user_id: int) -> list[dict]:
+    def get_cart(self, user_id: int) -> list[CartItem]:
         """Recupera gli articoli nel carrello dell'utente."""
         ...
 
@@ -43,7 +45,7 @@ class ISessionManager(ABC):
     def add_to_cart(self, user_id: int, cod_art: str, qta: int,
                     source: str = "customer",
                     ai_confidence: Optional[float] = None,
-                    related_message_id: Optional[int] = None) -> dict:
+                    related_message_id: Optional[int] = None) -> CartItem:
         """Aggiunge un articolo al carrello (o aggiorna se esiste). Ritorna la riga."""
         ...
 
@@ -51,7 +53,7 @@ class ISessionManager(ABC):
     def add_to_cart_by_session(self, session_id: int, cod_art: str, qta: int,
                                source: str = "customer",
                                ai_confidence: Optional[float] = None,
-                               related_message_id: Optional[int] = None) -> dict:
+                               related_message_id: Optional[int] = None) -> CartItem:
         """Aggiunge un articolo al carrello della sessione specificata."""
         ...
 

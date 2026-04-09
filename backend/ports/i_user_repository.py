@@ -1,17 +1,19 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from domain.models import User
+
 
 class IUserRepository(ABC):
     """Contratto di accesso ai dati utente e assortimento."""
 
     @abstractmethod
-    def find_by_email(self, email: str) -> Optional[dict]:
+    def find_by_email(self, email: str) -> Optional[User]:
         """Recupera l'utente associato all'email. Ritorna None se non trovato."""
         ...
 
     @abstractmethod
-    def find_by_id(self, user_id: int) -> Optional[dict]:
+    def find_by_id(self, user_id: int) -> Optional[User]:
         """Recupera l'utente per ID. Ritorna None se non trovato."""
         ...
 

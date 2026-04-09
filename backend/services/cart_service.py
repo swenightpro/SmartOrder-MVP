@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 from typing import Optional
 from ports.i_session_manager import ISessionManager
 
@@ -20,10 +21,12 @@ class CartService:
             self._schedule_emit(self._broadcaster.emit(session_id, "cart_update", {}))
 
     def get_cart(self, user_id: int) -> list[dict]:
-        return self._repo.get_cart(user_id)
+        items = self._repo.get_cart(user_id)
+        return [dataclasses.asdict(item) for item in items]
 
     def get_cart_by_session(self, session_id: int) -> list[dict]:
-        return self._repo.get_cart_by_session(session_id)
+        items = self._repo.get_cart_by_session(session_id)
+        return [dataclasses.asdict(item) for item in items]
 
     def add_to_cart(self, user_id: int, cod_art: str, qta: int,
                     source: str = "customer",
@@ -41,7 +44,7 @@ class CartService:
                 ai_confidence, related_message_id
             )
         self._emit_cart_update(session_id)
-        return result
+        return dataclasses.asdict(result)
 
     def remove_from_cart(self, cart_item_id: int, user_id: int,
                         session_id: Optional[int] = None) -> bool:

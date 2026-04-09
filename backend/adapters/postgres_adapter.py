@@ -9,6 +9,7 @@ from ports.i_session_manager import ISessionManager
 from ports.i_order_repository import IOrderRepository
 from ports.i_ticket_repository import ITicketRepository
 from adapters.database import execute_query, execute_query_one
+from domain.models import User, Session, CartItem, Ticket
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +74,8 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     # IUserRepository
     # =======================================================================
 
-    def find_by_email(self, email: str) -> Optional[dict]:
-        return execute_query_one(
+    def find_by_email(self, email: str) -> Optional[User]:
+        row = execute_query_one(
             """SELECT id, email, password_hash, password_salt, role, cod_cli,
                       is_active, created_at, updated_at
                FROM app_users
@@ -82,13 +83,41 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                LIMIT 1""",
             (email,),
         )
+        if not row:
+            return None
+        return User(
+            id=row["id"],
+            email=row["email"],
+            cod_cli=int(row.get("cod_cli") or 0),
+            role=row.get("role", "customer"),
+            password_hash=row.get("password_hash", ""),
+            password_salt=row.get("password_salt", ""),
+            is_active=bool(row.get("is_active", True)),
+            export_folder=row.get("export_folder"),
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+            updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
+        )
 
-    def find_by_id(self, user_id: int) -> Optional[dict]:
-        return execute_query_one(
+    def find_by_id(self, user_id: int) -> Optional[User]:
+        row = execute_query_one(
             """SELECT id, email, password_hash, password_salt, role, cod_cli,
                       is_active, created_at, updated_at
                FROM app_users WHERE id = %s LIMIT 1""",
             (user_id,),
+        )
+        if not row:
+            return None
+        return User(
+            id=row["id"],
+            email=row["email"],
+            cod_cli=int(row.get("cod_cli") or 0),
+            role=row.get("role", "customer"),
+            password_hash=row.get("password_hash", ""),
+            password_salt=row.get("password_salt", ""),
+            is_active=bool(row.get("is_active", True)),
+            export_folder=row.get("export_folder"),
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+            updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
         )
 
     def update_password(self, user_id: int, password_hash: str, password_salt: str) -> None:
@@ -117,16 +146,24 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     # ISessionManager — Sessioni
     # =======================================================================
 
-    def get_active_session(self, user_id: int) -> Optional[dict]:
-        return execute_query_one(
+    def get_active_session(self, user_id: int) -> Optional[Session]:
+        row = execute_query_one(
             """SELECT id, user_id, status, created_at
                FROM chat_sessions
                WHERE user_id = %s AND status = 'active'
                ORDER BY created_at DESC LIMIT 1""",
             (user_id,),
         )
+        if not row:
+            return None
+        return Session(
+            id=row["id"],
+            user_id=row["user_id"],
+            status=row["status"],
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+        )
 
-    def create_session(self, user_id: int) -> dict:
+    def create_session(self, user_id: int) -> Session:
         # Chiudi sessioni precedenti
         execute_query(
             "UPDATE chat_sessions SET status = 'completed', closed_at = NOW() WHERE user_id = %s AND status = 'active'",
@@ -139,7 +176,12 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                RETURNING id, user_id, status, created_at""",
             (user_id,),
         )
-        return row  # type: ignore
+        return Session(
+            id=row["id"],
+            user_id=row["user_id"],
+            status=row["status"],
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+        )  # type: ignore
 
     # =======================================================================
     # ISessionManager — Messaggi
@@ -328,9 +370,9 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     # ISessionManager — Carrello
     # =======================================================================
 
-    def get_cart_by_session(self, session_id: int) -> list[dict]:
+    def get_cart_by_session(self, session_id: int) -> list[CartItem]:
         """Recupera gli articoli nel carrello di una sessione specifica."""
-        return execute_query(
+        rows = execute_query(
             """SELECT ci.id, ci.cod_art, ci.qta, ci.source, ci.last_updated_by,
                       ci.ai_confidence, ci.related_message_id, ci.updated_at,
                       a.des_art, a.des_um, a.pezzi_conf, a.des_tipo_um,
@@ -341,12 +383,33 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                ORDER BY ci.updated_at ASC""",
             (session_id,),
         )
+        return [
+            CartItem(
+                id=r["id"],
+                cod_art=r["cod_art"],
+                qta=r["qta"],
+                source=r.get("source", "customer"),
+                session_id=session_id,
+                last_updated_by=r.get("last_updated_by"),
+                ai_confidence=r.get("ai_confidence"),
+                related_message_id=r.get("related_message_id"),
+                updated_at=str(r["updated_at"]) if r.get("updated_at") else None,
+                des_art=r.get("des_art"),
+                des_um=r.get("des_um"),
+                pezzi_conf=r.get("pezzi_conf"),
+                des_tipo_um=r.get("des_tipo_um"),
+                linea=r.get("linea"),
+                famiglia=r.get("famiglia"),
+                stato=r.get("stato"),
+            )
+            for r in rows
+        ]
 
-    def get_cart(self, user_id: int) -> list[dict]:
+    def get_cart(self, user_id: int) -> list[CartItem]:
         session = self.get_active_session(user_id)
         if not session:
             return []
-        return self.get_cart_by_session(session["id"])
+        return self.get_cart_by_session(session.id)
 
     def _validate_product_exists(self, cod_art: str) -> None:
         product_exists = execute_query_one(
@@ -359,14 +422,13 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     def add_to_cart(self, user_id: int, cod_art: str, qta: int,
                     source: str = "customer",
                     ai_confidence: Optional[float] = None,
-                    related_message_id: Optional[int] = None) -> dict:
+                    related_message_id: Optional[int] = None) -> CartItem:
         session = self.get_active_session(user_id)
         if not session:
-            # Crea sessione se non esiste
             session = self.create_session(user_id)
 
         return self.add_to_cart_by_session(
-            session_id=session["id"],
+            session_id=session.id,
             cod_art=cod_art,
             qta=qta,
             source=source,
@@ -377,10 +439,9 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     def add_to_cart_by_session(self, session_id: int, cod_art: str, qta: int,
                                source: str = "customer",
                                ai_confidence: Optional[float] = None,
-                               related_message_id: Optional[int] = None) -> dict:
+                               related_message_id: Optional[int] = None) -> CartItem:
         self._validate_product_exists(cod_art)
 
-        # Upsert: se l'articolo esiste già, somma la quantità
         existing = execute_query_one(
             "SELECT id, qta FROM cart_items WHERE session_id = %s AND cod_art = %s",
             (session_id, cod_art),
@@ -395,7 +456,15 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                 (new_qta, source, source, ai_confidence, related_message_id, existing["id"]),
                 fetch=False,
             )
-            return {"id": existing["id"], "cod_art": cod_art, "qta": new_qta}
+            return CartItem(
+                id=existing["id"],
+                cod_art=cod_art,
+                qta=new_qta,
+                source=source,
+                session_id=session_id,
+                ai_confidence=ai_confidence,
+                related_message_id=related_message_id,
+            )
         else:
             row = execute_query_one(
                 """INSERT INTO cart_items (session_id, cod_art, qta, source, last_updated_by,
@@ -404,13 +473,21 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                    RETURNING id, cod_art, qta""",
                 (session_id, cod_art, qta, source, source, ai_confidence, related_message_id),
             )
-            return row  # type: ignore
+            return CartItem(
+                id=row["id"],  # type: ignore
+                cod_art=row["cod_art"],  # type: ignore
+                qta=row["qta"],  # type: ignore
+                source=source,
+                session_id=session_id,
+                ai_confidence=ai_confidence,
+                related_message_id=related_message_id,
+            )
 
     def remove_from_cart(self, cart_item_id: int, user_id: int) -> bool:
         session = self.get_active_session(user_id)
         if not session:
             return False
-        return self.remove_from_cart_by_session(cart_item_id, session["id"])
+        return self.remove_from_cart_by_session(cart_item_id, session.id)
 
     def remove_from_cart_by_session(self, cart_item_id: int, session_id: int) -> bool:
         result = execute_query(
@@ -424,7 +501,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
         session = self.get_active_session(user_id)
         if not session:
             return False
-        return self.update_cart_quantity_by_session(cart_item_id, session["id"], qta, source)
+        return self.update_cart_quantity_by_session(cart_item_id, session.id, qta, source)
 
     def update_cart_quantity_by_session(self, cart_item_id: int, session_id: int,
                                         qta: int, source: str = "customer") -> bool:
@@ -439,7 +516,7 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
         session = self.get_active_session(user_id)
         if not session:
             return
-        self.clear_cart_by_session(session["id"])
+        self.clear_cart_by_session(session.id)
 
     def clear_cart_by_session(self, session_id: int) -> None:
         execute_query(
@@ -1229,18 +1306,26 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
     # ITicketRepository
     # =======================================================================
 
-    def create_ticket(self, session_id: int, cod_cli: int) -> dict:
+    def create_ticket(self, session_id: int, cod_cli: int) -> Ticket:
         row = execute_query_one(
             """INSERT INTO tickets (session_id, cod_cli, status)
                VALUES (%s, %s, 'aperto')
                RETURNING id, session_id, cod_cli, status, locked_by, created_at, updated_at""",
             (session_id, cod_cli),
         )
-        return row  # type: ignore
+        return Ticket(
+            id=row["id"],  # type: ignore
+            session_id=row["session_id"],  # type: ignore
+            cod_cli=row["cod_cli"],  # type: ignore
+            status=row["status"],  # type: ignore
+            locked_by=row.get("locked_by"),  # type: ignore
+            created_at=str(row["created_at"]) if row.get("created_at") else None,  # type: ignore
+            updated_at=str(row["updated_at"]) if row.get("updated_at") else None,  # type: ignore
+        )
 
-    def get_ticket_by_session(self, session_id: int, cod_cli: Optional[int] = None) -> Optional[dict]:
+    def get_ticket_by_session(self, session_id: int, cod_cli: Optional[int] = None) -> Optional[Ticket]:
         if cod_cli is not None:
-            return execute_query_one(
+            row = execute_query_one(
                 """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
                    FROM tickets
                    WHERE session_id = %s
@@ -1249,23 +1334,47 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
                    ORDER BY created_at DESC LIMIT 1""",
                 (session_id, cod_cli),
             )
-        return execute_query_one(
-            """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
-               FROM tickets
-               WHERE session_id = %s
-                 AND status != 'chiuso'
-               ORDER BY created_at DESC LIMIT 1""",
-            (session_id,),
+        else:
+            row = execute_query_one(
+                """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
+                   FROM tickets
+                   WHERE session_id = %s
+                     AND status != 'chiuso'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (session_id,),
+            )
+        if not row:
+            return None
+        return Ticket(
+            id=row["id"],
+            session_id=row["session_id"],
+            cod_cli=row["cod_cli"],
+            status=row["status"],
+            locked_by=row.get("locked_by"),
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+            updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
         )
 
-    def get_open_tickets(self) -> list[dict]:
-        return execute_query(
+    def get_open_tickets(self) -> list[Ticket]:
+        rows = execute_query(
             """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
                FROM tickets
                WHERE status IN ('aperto', 'in_lavorazione')
                ORDER BY created_at ASC""",
             (),
         )
+        return [
+            Ticket(
+                id=r["id"],
+                session_id=r["session_id"],
+                cod_cli=r["cod_cli"],
+                status=r["status"],
+                locked_by=r.get("locked_by"),
+                created_at=str(r["created_at"]) if r.get("created_at") else None,
+                updated_at=str(r["updated_at"]) if r.get("updated_at") else None,
+            )
+            for r in rows
+        ]
 
     def get_platform_usage_overview(self, days: int = 14) -> dict:
         """Metriche aggregate piattaforma per dashboard operatore (sola lettura)."""
@@ -1373,11 +1482,22 @@ class PostgresAdapter(IUserRepository, ISessionManager, IOrderRepository, ITicke
             "top_clients": top_clients,
         }
 
-    def get_ticket_by_id(self, ticket_id: int) -> Optional[dict]:
-        return execute_query_one(
+    def get_ticket_by_id(self, ticket_id: int) -> Optional[Ticket]:
+        row = execute_query_one(
             """SELECT id, session_id, cod_cli, status, locked_by, created_at, updated_at
                FROM tickets WHERE id = %s LIMIT 1""",
             (ticket_id,),
+        )
+        if not row:
+            return None
+        return Ticket(
+            id=row["id"],
+            session_id=row["session_id"],
+            cod_cli=row["cod_cli"],
+            status=row["status"],
+            locked_by=row.get("locked_by"),
+            created_at=str(row["created_at"]) if row.get("created_at") else None,
+            updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
         )
 
     def lock_ticket(self, ticket_id: int, operator_id: int) -> bool:
